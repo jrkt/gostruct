@@ -3,6 +3,17 @@ This is a library to auto-generate Structs based on MySQL database tables and tr
 
 USAGE
 
+FLAGS 
+
+table 
+    This is the MySQL database table
+    
+database
+    This is the name of the MySQL database
+    
+host
+    This is the hostname or server of where the database is located
+
     package main
 
     import (
