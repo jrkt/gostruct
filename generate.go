@@ -36,7 +36,7 @@ var tablesDone []string
 var foreignKeys []KeyObj
 var GOPATH string
 
-func Run(table string, database string, ip string) error {
+func Run(table string, database string, host string) error {
 	GOPATH = os.Getenv("GOPATH")
 
 	//make sure models dir exists
@@ -50,7 +50,7 @@ func Run(table string, database string, ip string) error {
 	cnt := 0
 	tables = append(tables, table)
 	for {
-		err = handleTable(tables[cnt], database, ip)
+		err = handleTable(tables[cnt], database, host)
 		if err != nil {
 			return err
 		}
@@ -64,7 +64,7 @@ func Run(table string, database string, ip string) error {
 	return nil
 }
 
-func handleTable(table string, database string, ip string) error {
+func handleTable(table string, database string, host string) error {
 	if inarray.InStringArray(table, tablesDone) {
 		return nil
 	} else {
@@ -74,7 +74,7 @@ func handleTable(table string, database string, ip string) error {
 	tableNaming := uppercaseFirst(table)
 	log.Println("Generating Base Classes for: " + table)
 
-	con, err = sql.Open("mysql", DB_USERNAME + ":" + DB_PASSWORD + "@tcp(" + ip + ":3306)/" + database)
+	con, err = sql.Open("mysql", DB_USERNAME + ":" + DB_PASSWORD + "@tcp(" + host + ":3306)/" + database)
 	if err != nil {
 		return err
 	}
