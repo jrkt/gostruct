@@ -8,7 +8,6 @@ import (
 	"errors"
 	"os"
 	"strings"
-	"bytes"
 	"os/exec"
 	"utils/inarray"
 )
@@ -40,8 +39,7 @@ var foreignKeys []KeyObj
 func run() {
 	table := flag.String("table", "", "Table")
 	database := flag.String("database", "circlepix", "Database")
-	server := flag.String("server", "pyro3", "Server")
-	sandbox := flag.String("sandbox", "", "Sandbox")
+	ip := flag.String("server", "pyro3", "Server")
 	flag.Parse()
 
 	cnt := 0
