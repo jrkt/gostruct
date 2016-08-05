@@ -4,11 +4,16 @@ This is a library to auto-generate Structs based on MySQL database tables and tr
 USAGE
 
     package main
-    
+
     import (
-            "github.com/jonathankentstevens/gostruct"
+    	_ "github.com/go-sql-driver/mysql"
+    	"github.com/jonathankentstevens/gostruct"
+    	"log"
     )
-    
+
     func main() {
-            gs := new(gostruct)
+    	err := gostruct.Generate()
+    	if err != nil {
+    	        panic(err)
+    	}
     }
