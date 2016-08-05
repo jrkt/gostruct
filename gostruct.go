@@ -11,10 +11,10 @@ func Generate() error {
 
 	table := flag.String("table", "", "Table")
 	database := flag.String("database", "", "Database")
-	ip := flag.String("ip", "", "Server")
+	host := flag.String("host", "", "Server")
 	flag.Parse()
 
-	err := Run(*table, *database, *ip)
+	err := Run(*table, *database, *host)
 	if err != nil {
 		return err
 	}
