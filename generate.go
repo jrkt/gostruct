@@ -75,6 +75,9 @@ func handleTable(table string, database string, ip string) error {
 	log.Println("Generating Base Classes for: " + table)
 
 	con, err = sql.Open("mysql", DB_USERNAME + ":" + DB_PASSWORD + "@tcp(" + ip + ":3306)/" + database)
+	if err != nil {
+		return err
+	}
 
 	rows1, err := con.Query("SELECT column_name, is_nullable, column_key FROM information_schema.columns WHERE table_name = ?", table)
 	defer rows1.Close()
@@ -87,7 +90,6 @@ func handleTable(table string, database string, ip string) error {
 		return err
 	} else {
 		for rows1.Next() {
-			println("SCAN")
 			rows1.Scan(&object.Name, &object.IsNullable, &object.Key)
 			objects = append(objects, object)
 			columns = append(columns, object.Name)
