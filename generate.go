@@ -1,7 +1,6 @@
 package gostruct
 
 import (
-	"flag"
 	"database/sql"
 	_ "github.com/go-sql-driver/mysql"
 	"log"
@@ -35,18 +34,26 @@ var primaryKey string
 var tables []string
 var tablesDone []string
 var foreignKeys []KeyObj
+var GOPATH string
 
-func run() {
-	table := flag.String("table", "", "Table")
-	database := flag.String("database", "circlepix", "Database")
-	ip := flag.String("server", "pyro3", "Server")
-	flag.Parse()
+func Run(table string, database string, ip string) error {
+	GOPATH = os.Getenv("GOPATH")
+
+	//make sure models dir exists
+	if !exists(GOPATH + "/src/models") {
+		err := os.Mkdir(GOPATH + "/src/models", 0777)
+		if err != nil {
+			return err
+		}
+	}
 
 	cnt := 0
-	tables = append(tables, *table)
+	tables = append(tables, table)
 	for {
-		err = handleTable(tables[cnt], *database, *sandbox, *ip)
-		check(err)
+		err = handleTable(tables[cnt], database, ip)
+		if err != nil {
+			return err
+		}
 
 		if cnt == len(tables) - 1 {
 			break
@@ -54,10 +61,10 @@ func run() {
 		cnt++
 	}
 
-	return
+	return nil
 }
 
-func handleTable(table string, database string, sandbox string, ip string) error {
+func handleTable(table string, database string, ip string) error {
 	if inarray.InStringArray(table, tablesDone) {
 		return nil
 	} else {
@@ -67,7 +74,7 @@ func handleTable(table string, database string, sandbox string, ip string) error
 	tableNaming := uppercaseFirst(table)
 	log.Println("Generating Base Classes for: " + table)
 
-	con, err = sql.Open("mysql", "devuser:L!ght@m@tch@tcp(" + ip + ":3306)/" + database)
+	con, err = sql.Open("mysql", DB_USERNAME + ":" + DB_PASSWORD + "@tcp(" + ip + ":3306)/" + database)
 
 	rows1, err := con.Query("SELECT column_name, is_nullable, column_key FROM information_schema.columns WHERE table_name = ?", table)
 	defer rows1.Close()
@@ -80,6 +87,7 @@ func handleTable(table string, database string, sandbox string, ip string) error
 		return err
 	} else {
 		for rows1.Next() {
+			println("SCAN")
 			rows1.Scan(&object.Name, &object.IsNullable, &object.Key)
 			objects = append(objects, object)
 			columns = append(columns, object.Name)
@@ -101,7 +109,9 @@ func handleTable(table string, database string, sandbox string, ip string) error
 
 		//get ForeignKeys
 		rows2, err := con.Query("SELECT table_name, column_name, referenced_table_name, referenced_column_name FROM information_schema.key_column_usage WHERE table_name = ?", table)
-		check(err)
+		if err != nil {
+			return err
+		}
 		defer rows2.Close()
 
 		var key = KeyObj{}
@@ -120,7 +130,7 @@ func handleTable(table string, database string, sandbox string, ip string) error
 		}
 
 		//create directory
-		dir := "/online/" + sandbox + "/circlepix/GO/src/models/" + uppercaseFirst(table) + "/"
+		dir := GOPATH + "/src/models/" + uppercaseFirst(table) + "/"
 		if !exists(dir) {
 			err := os.Mkdir(dir, 0777)
 			if err != nil {
@@ -190,28 +200,28 @@ func buildCruxFileContents(objects []TableObj, table string, database string) st
 	string2 := ""
 
 	Loop:
-		for i := 0; i < len(objects); i++ {
-			object := objects[i]
-			for c := 0; c < len(usedColumns); c++ {
-				if usedColumns[c].Name == object.Name {
-					continue Loop
-				}
+	for i := 0; i < len(objects); i++ {
+		object := objects[i]
+		for c := 0; c < len(usedColumns); c++ {
+			if usedColumns[c].Name == object.Name {
+				continue Loop
 			}
-			usedColumns = append(usedColumns, UsedColumn{Name: object.Name})
-
-			if object.Key == "PRI" {
-				primaryKey = object.Name
-			}
-
-			dataType := ""
-			if object.IsNullable == "NO" {
-				dataType = "string"
-			} else {
-				dataType = "sql.NullString"
-			}
-			string += "\n\t" + uppercaseFirst(object.Name) + "\t\t" + dataType
-			string2 = ", &" + strings.ToLower(table) + "." + uppercaseFirst(object.Name)
 		}
+		usedColumns = append(usedColumns, UsedColumn{Name: object.Name})
+
+		if object.Key == "PRI" {
+			primaryKey = object.Name
+		}
+
+		dataType := ""
+		if object.IsNullable == "NO" {
+			dataType = "string"
+		} else {
+			dataType = "sql.NullString"
+		}
+		string += "\n\t" + uppercaseFirst(object.Name) + "\t\t" + dataType
+		string2 = ", &" + strings.ToLower(table) + "." + uppercaseFirst(object.Name)
+	}
 	string += "\n}"
 
 	//create ReadById method
