@@ -1,5 +1,12 @@
 package gostruct
 
+import (
+	"os"
+	"strings"
+	"bytes"
+	"log"
+)
+
 func exists(path string) bool {
 	if _, err := os.Stat(path); err == nil {
 		return true
