@@ -7,7 +7,6 @@ import (
 const DB_USERNAME = "devuser";
 const DB_PASSWORD = "L!ght@m@tch";
 
-//TODO: setup Company c for foreign key queries
 //TODO: figure out why realtor is giving GetRealtor as foreign key method
 
 func Generate() error {

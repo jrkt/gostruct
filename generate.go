@@ -164,7 +164,7 @@ func handleTable(table string, database string, host string) error {
 		} else {
 			for rows2.Next() {
 				rows2.Scan(&key.TableName, &key.ColumnName, &key.ReferencedTable, &key.ReferencedColumn)
-				if key.ColumnName != primaryKey && inarray.InStringArray(key.ColumnName, columns) && key.ReferencedTable.String != "" {
+				if key.ColumnName != primaryKey && inarray.InStringArray(key.ColumnName, columns) && key.ReferencedTable.String != "" && key.TableName != key.ReferencedTable.String {
 					foreignKeys = append(foreignKeys, key)
 					tables = append(tables, key.ReferencedTable.String)
 				}
@@ -348,7 +348,7 @@ func Save(Object ` + uppercaseFirst(table) + `Obj) {
 			initialString += "\n\t\"models/" + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "\""
 			string += "\n\nfunc Get" + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "(Object " + uppercaseFirst(foreignKeys[i].TableName) + "Obj) (" + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "Obj, error) {"
 			string += "\n\tcon := connection.GetConnection()\n\n\tvar " + strings.ToLower(foreignKeys[i].ReferencedTable.String) + " " + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "Obj"
-			string += "\n\terr := con.QueryRow(\"SELECT * FROM " + foreignKeys[i].ReferencedTable.String + " INNER JOIN " + foreignKeys[i].TableName + " ON " + foreignKeys[i].ReferencedTable.String
+			string += "\n\terr := con.QueryRow(\"SELECT " + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + ".* FROM " + foreignKeys[i].ReferencedTable.String + " INNER JOIN " + foreignKeys[i].TableName + " ON " + foreignKeys[i].ReferencedTable.String
 			string += "." + foreignKeys[i].ReferencedColumn.String + " = " + foreignKeys[i].TableName + "." + foreignKeys[i].ColumnName + " WHERE " + foreignKeys[i].TableName + "." + foreignKeys[i].ColumnName
 			string += " = ?\", Object." + uppercaseFirst(foreignKeys[i].ColumnName) + ").Scan(&" + strings.ToLower(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(objects2[0].Name)
 			for o := 1; o < len(objects2); o++ {
