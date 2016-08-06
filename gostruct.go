@@ -7,8 +7,6 @@ import (
 const DB_USERNAME = "devuser";
 const DB_PASSWORD = "L!ght@m@tch";
 
-//TODO: figure out why realtor is giving GetRealtor as foreign key method
-
 func Generate() error {
 
 	table := flag.String("table", "", "Table")
