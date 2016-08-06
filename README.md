@@ -197,3 +197,23 @@ A package with a struct and a method to read by the primary key will be created 
     
     	return office, nil
     }
+
+# usage
+
+    package main
+
+    import (
+    	"models/Realtor"
+    	"log"
+    	"fmt"
+    )
+    
+    func main() {
+    	realtor, err := Realtor.ReadById(429455)
+    	if err != nil {
+    		log.Println(err.Error())
+    	}
+    	
+    	realtor.Email = "test@email.com"
+    	Realtor.Save(realtor)
+    }
