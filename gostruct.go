@@ -4,14 +4,17 @@ import (
 	"flag"
 )
 
-func Generate(username string, password string) error {
+const DB_USERNAME = "devuser";
+const DB_PASSWORD = "L!ght@m@tch";
+
+func Generate() error {
 
 	table := flag.String("table", "", "Table")
 	database := flag.String("database", "", "Database")
 	host := flag.String("host", "", "Server")
 	flag.Parse()
 
-	err := Run(*table, *database, *host, username, password)
+	err := Run(*table, *database, *host)
 	if err != nil {
 		return err
 	}

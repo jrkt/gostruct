@@ -36,13 +36,7 @@ var tablesDone []string
 var foreignKeys []KeyObj
 var GOPATH string
 
-var dbUsername string
-var dbPassword string
-
-func Run(table string, database string, host string, username string, password string) error {
-	dbUsername = username
-	dbPassword = password
-
+func Run(table string, database string, host string) error {
 	GOPATH = os.Getenv("GOPATH")
 
 	//make sure models dir exists
@@ -80,7 +74,7 @@ func Run(table string, database string, host string, username string, password s
                         return err
                 }
 
-                contents := "package connection\n\nimport (\n\t\"database/sql\"\n\t_ \"github.com/go-sql-driver/mysql\"\n\t\"log\"\n)\n\nfunc GetConnection() *sql.DB {\n\tcon, err := sql.Open(\"mysql\", " + dbUsername + ":" + dbPassword + "@tcp(" + host + ":3306)/" + database + ")\n\tif err != nil {\n\t\tpanic(err)\n\t}\n\n\treturn con\n}"
+                contents := "package connection\n\nimport (\n\t\"database/sql\"\n\t_ \"github.com/go-sql-driver/mysql\"\n\t\"log\"\n)\n\nfunc GetConnection() *sql.DB {\n\tcon, err := sql.Open(\"mysql\", " + DB_USERNAME + ":" + DB_PASSWORD + "@tcp(" + host + ":3306)/" + database + ")\n\tif err != nil {\n\t\tpanic(err)\n\t}\n\n\treturn con\n}"
                 _, err = connectionFile.WriteString(contents)
                 if err != nil {
                         return err
@@ -113,7 +107,7 @@ func handleTable(table string, database string, host string) error {
 	tableNaming := uppercaseFirst(table)
 	log.Println("Generating Base Classes for: " + table)
 
-	con, err = sql.Open("mysql", dbUsername + ":" + dbPassword + "@tcp(" + host + ":3306)/" + database)
+	con, err = sql.Open("mysql", DB_USERNAME + ":" + DB_PASSWORD + "@tcp(" + host + ":3306)/" + database)
 
 	if err != nil {
 		return err
@@ -299,7 +293,7 @@ func buildCruxFileContents(objects []TableObj, table string, database string) st
 			}
 
 			initialString += "\n\t\"models/" + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "\""
-			string += "\n\nfunc Get" + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "(Object, error) (" + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "Obj, error) {"
+			string += "\n\nfunc Get" + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "(Object " + uppercaseFirst(foreignKeys[i].TableName) + "Obj, error) (" + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "Obj, error) {"
 			string += "\n\tcon := db.GetConnection()\n\n\tvar " + strings.ToLower(foreignKeys[i].ReferencedTable.String) + " " + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "Obj"
 			string += "\n\terr := con.QueryRow(\"SELECT * FROM " + foreignKeys[i].ReferencedTable.String + " INNER JOIN " + foreignKeys[i].TableName + " ON " + foreignKeys[i].ReferencedTable.String
 			string += "." + foreignKeys[i].ReferencedColumn.String + " = " + foreignKeys[i].TableName + "." + foreignKeys[i].ColumnName + " WHERE " + foreignKeys[i].TableName + "." + foreignKeys[i].ColumnName
