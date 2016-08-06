@@ -3,11 +3,17 @@ This is a library to auto-generate models with packages, structs, and basic meth
 
 # flags 
 
-table - This is the MySQL database table
+table
     
-database - This is the name of the MySQL database
+    MySQL database table
     
-host - This is the hostname or server of where the database is located
+database
+    
+    Name of the MySQL database
+    
+host
+    
+    Hostname or server of where the database is located
 
 # usage
 
