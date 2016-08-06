@@ -299,11 +299,11 @@ func buildCruxFileContents(objects []TableObj, table string, database string) st
 			}
 
 			initialString += "\n\t\"models/" + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "\""
-			string += "\n\nfunc Get" + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "(" + uppercaseFirst(foreignKeys[i].TableName) + "Obj, error) (" + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "Obj, error) {"
+			string += "\n\nfunc Get" + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "(Object, error) (" + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "Obj, error) {"
 			string += "\n\tcon := db.GetConnection()\n\n\tvar " + strings.ToLower(foreignKeys[i].ReferencedTable.String) + " " + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "Obj"
 			string += "\n\terr := con.QueryRow(\"SELECT * FROM " + foreignKeys[i].ReferencedTable.String + " INNER JOIN " + foreignKeys[i].TableName + " ON " + foreignKeys[i].ReferencedTable.String
 			string += "." + foreignKeys[i].ReferencedColumn.String + " = " + foreignKeys[i].TableName + "." + foreignKeys[i].ColumnName + " WHERE " + foreignKeys[i].TableName + "." + foreignKeys[i].ColumnName
-			string += " = ?\", " + uppercaseFirst(foreignKeys[i].TableName) + "Obj." + uppercaseFirst(foreignKeys[i].ColumnName) + ").Scan(&" + strings.ToLower(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(objects2[0].Name)
+			string += " = ?\", Object." + uppercaseFirst(foreignKeys[i].ColumnName) + ").Scan(&" + strings.ToLower(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(objects2[0].Name)
 			for o := 1; o < len(objects2); o++ {
 				object2 := objects2[o]
 
