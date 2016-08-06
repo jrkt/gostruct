@@ -28,24 +28,6 @@ type HomeObj struct {
         Date_posted           string
         Status                string
         Id                    string
-        Photographerid        sql.NullString
-        Date_linked           string
-        Contact_notes         sql.NullString
-        LeadGen               string
-        Archived              string
-        ExclusiveLeads        string
-        Directory             sql.NullString
-        NeedsLinking          string
-        VaPropertyId          sql.NullString
-        VaHomeStatus          string
-        MlsName               sql.NullString
-        ExternalURL           sql.NullString
-        OfficeCode            sql.NullString
-        ExternalImagesUpdated sql.NullString
-        DateMediaUpdated      sql.NullString
-        SellingPrice          sql.NullString
-        UpdateLOYTImages      sql.NullString
-        CorrectedCity         sql.NullString
         PropertyType          sql.NullString
         PropertySubType       sql.NullString
         FullBaths             sql.NullString
@@ -54,18 +36,6 @@ type HomeObj struct {
         QuarterBaths          sql.NullString
         SellType              sql.NullString
         Neighborhood          sql.NullString
-        CustomVideoTitle      sql.NullString
-        IsWaterfront          sql.NullString
-        IsInForeclosure       sql.NullString
-        IsShortSale           sql.NullString
-        IsREO                 sql.NullString
-        YearBuilt             sql.NullString
-        SourceImportScriptId  sql.NullString
-        MlsArea               sql.NullString
-        ListingStatus         sql.NullString
-        FrontImageLabel       sql.NullString
-        LastActiveInFeed      sql.NullString
-        DateFeedShowsUpdated  sql.NullString
 }
 
 func ReadById(id int) (HomeObj, error) {
