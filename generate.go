@@ -284,22 +284,39 @@ func Save(Object ` + uppercaseFirst(table) + `Obj) {
 	v := reflect.ValueOf(&Object).Elem()
 	objType := v.Type()
 
-	firstValue := reflect.Value(v.Field(1)).String()
-	if firstValue == "<sql.NullString Value>" {
-		firstValue = "null"
+	var firstValue string
+	if v.Field(1).Type() == reflect.TypeOf(sql.NullString{}) {
+		if reflect.Value(v.Field(1)).Field(0).String() == "" {
+			firstValue = "null"
+		} else {
+			firstValue = "'" + reflect.Value(v.Field(1)).Field(0).String() + "'"
+		}
 	} else {
-		firstValue = "'" + firstValue + "'"
+		if reflect.Value(v.Field(0)).String() == "" {
+			firstValue = "null"
+		} else {
+			firstValue = "'" + reflect.Value(v.Field(1)).String() + "'"
+		}
 	}
 
 	query := "UPDATE ` + table + ` SET " + objType.Field(1).Name + " = " + firstValue
 
 	for i := 2; i < v.NumField(); i++ {
+		propType := v.Field(i).Type()
 		property := string(objType.Field(i).Name)
-		value := reflect.Value(v.Field(i)).String()
-		if value == "<sql.NullString Value>" {
-			value = "null"
+		value := ""
+		if propType == reflect.TypeOf(sql.NullString{}) {
+			if reflect.Value(v.Field(i)).Field(0).String() == "" {
+				value = "null"
+			} else {
+				value = "'" + reflect.Value(v.Field(i)).Field(0).String() + "'"
+			}
 		} else {
-			value = "'" + value + "'"
+			if reflect.Value(v.Field(i)).String() == "" {
+				value = "null"
+			} else {
+				value = "'" + reflect.Value(v.Field(i)).String() + "'"
+			}
 		}
 
 		query += ", " + property + " = " + value
