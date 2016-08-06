@@ -47,38 +47,37 @@ func Run(table string, database string, host string) error {
 		}
 
 		//give new directory full permissions
-                err = os.Chmod(GOPATH + "/src/connection", 0777)
-                if err != nil {
-                        return err
-                }
+		err = os.Chmod(GOPATH + "/src/connection", 0777)
+		if err != nil {
+			return err
+		}
 	}
 
 	if !exists(GOPATH + "/src/connection") {
 		//create connection package
-	        err = os.Mkdir(GOPATH + "/src/connection", 0777)
-	        if err != nil {
-	                return err
-	        }
+		err = os.Mkdir(GOPATH + "/src/connection", 0777)
+		if err != nil {
+			return err
+		}
 
-        	//give new directory full permissions
-	        err = os.Chmod(GOPATH + "/src/connection", 0777)
-	        if err != nil {
-	                return err
-	        }
+		//give new directory full permissions
+		err = os.Chmod(GOPATH + "/src/connection", 0777)
+		if err != nil {
+			return err
+		}
 	}
 
-
 	connectionFile, err := os.Create(GOPATH + "/src/connection/connection.go")
-        defer connectionFile.Close()
-                if err != nil {
-                        return err
-                }
+	defer connectionFile.Close()
+	if err != nil {
+		return err
+	}
 
-                contents := "package connection\n\nimport (\n\t\"database/sql\"\n\t_ \"github.com/go-sql-driver/mysql\"\n\t\"log\"\n)\n\nfunc GetConnection() *sql.DB {\n\tcon, err := sql.Open(\"mysql\", " + DB_USERNAME + ":" + DB_PASSWORD + "@tcp(" + host + ":3306)/" + database + ")\n\tif err != nil {\n\t\tpanic(err)\n\t}\n\n\treturn con\n}"
-                _, err = connectionFile.WriteString(contents)
-                if err != nil {
-                        return err
-                }
+	contents := "package connection\n\nimport (\n\t\"database/sql\"\n\t_ \"github.com/go-sql-driver/mysql\"\n\t\n)\n\nfunc GetConnection() *sql.DB {\n\tcon, err := sql.Open(\"mysql\", \"" + DB_USERNAME + ":" + DB_PASSWORD + "@tcp(" + host + ":3306)/" + database + "\")\n\tif err != nil {\n\t\tpanic(err)\n\t}\n\n\treturn con\n}"
+	_, err = connectionFile.WriteString(contents)
+	if err != nil {
+		return err
+	}
 
 	cnt := 0
 	tables = append(tables, table)
@@ -113,7 +112,7 @@ func handleTable(table string, database string, host string) error {
 		return err
 	}
 
-	rows1, err := con.Query("SELECT column_name, is_nullable, column_key FROM information_schema.columns WHERE table_name = ?", table)
+	rows1, err := con.Query("SELECT column_name, is_nullable, column_key FROM information_schema.columns WHERE table_name = ? AND table_schema = ?", table, database)
 	defer rows1.Close()
 
 	var object TableObj
@@ -123,9 +122,16 @@ func handleTable(table string, database string, host string) error {
 	if err != nil {
 		return err
 	} else {
+		cntPK := 0
 		for rows1.Next() {
 			rows1.Scan(&object.Name, &object.IsNullable, &object.Key)
 			objects = append(objects, object)
+			if object.Key == "PRI" {
+				cntPK++
+			}
+			if cntPK > 1 && object.Key == "PRI" {
+				continue
+			}
 			columns = append(columns, object.Name)
 		}
 	}
@@ -230,11 +236,12 @@ func buildCruxFileContents(objects []TableObj, table string, database string) st
 
 	var usedColumns []UsedColumn
 	initialString := "package " + uppercaseFirst(table) + "\n\n"
-	initialString += "import (\n\t\"database/sql\"\n\t\"db/" + database + "\"\n\t\"strconv\"\n\t\"errors\""
+	initialString += "import (\n\t\"database/sql\"\n\t\"connection\"\n\t\"reflect\"\n\t\"strconv\"\n\t\"errors\""
 
 	string := "\n\ntype " + uppercaseFirst(table) + "Obj struct {"
 	string2 := ""
 
+	cntPK := 0
 	Loop:
 	for i := 0; i < len(objects); i++ {
 		object := objects[i]
@@ -244,9 +251,11 @@ func buildCruxFileContents(objects []TableObj, table string, database string) st
 			}
 		}
 		usedColumns = append(usedColumns, UsedColumn{Name: object.Name})
-
 		if object.Key == "PRI" {
-			primaryKey = object.Name
+			cntPK++
+			if cntPK == 1 {
+				primaryKey = object.Name
+			}
 		}
 
 		dataType := ""
@@ -255,13 +264,57 @@ func buildCruxFileContents(objects []TableObj, table string, database string) st
 		} else {
 			dataType = "sql.NullString"
 		}
-		string += "\n\t" + uppercaseFirst(object.Name) + "\t\t" + dataType
-		string2 = ", &" + strings.ToLower(table) + "." + uppercaseFirst(object.Name)
+
+		if cntPK > 1 && object.Key == "PRI" {
+			string += ""
+		} else {
+			string += "\n\t" + uppercaseFirst(object.Name) + "\t\t" + dataType
+		}
+
+		if cntPK > 1 && object.Key == "PRI" {
+			string2 += ""
+		} else if i > 0 {
+			string2 += ", &" + strings.ToLower(table) + "." + uppercaseFirst(object.Name)
+		}
 	}
-	string += "\n}"
+	string += "\n}\n\nvar primaryKey = \"" + primaryKey + "\"\n"
+
+	string += `
+func Save(Object ` + uppercaseFirst(table) + `Obj) {
+	v := reflect.ValueOf(&Object).Elem()
+	objType := v.Type()
+
+	firstValue := reflect.Value(v.Field(1)).String()
+	if firstValue == "<sql.NullString Value>" {
+		firstValue = "null"
+	} else {
+		firstValue = "'" + firstValue + "'"
+	}
+
+	query := "UPDATE ` + table + ` SET " + objType.Field(1).Name + " = " + firstValue
+
+	for i := 2; i < v.NumField(); i++ {
+		property := string(objType.Field(i).Name)
+		value := reflect.Value(v.Field(i)).String()
+		if value == "<sql.NullString Value>" {
+			value = "null"
+		} else {
+			value = "'" + value + "'"
+		}
+
+		query += ", " + property + " = " + value
+	}
+	query += " WHERE " + primaryKey + " = '" + Object.` + uppercaseFirst(primaryKey) + ` + "'"
+
+	con := connection.GetConnection()
+	_, err := con.Exec(query)
+	if err != nil {
+		panic(err.Error())
+	}
+}`
 
 	//create ReadById method
-	string += "\n\nfunc ReadById(id int) (" + uppercaseFirst(table) + "Obj, error) {\n\tcon := db.GetConnection()\n\n\tvar " + strings.ToLower(table) + " " + uppercaseFirst(table) + "Obj"
+	string += "\n\nfunc ReadById(id int) (" + uppercaseFirst(table) + "Obj, error) {\n\tcon := connection.GetConnection()\n\n\tvar " + strings.ToLower(table) + " " + uppercaseFirst(table) + "Obj"
 	string += "\n\terr := con.QueryRow(\"SELECT * FROM " + table + " WHERE " + primaryKey + " = ?\", strconv.Itoa(id)).Scan(&" + strings.ToLower(table) + "." + uppercaseFirst(objects[0].Name)
 	string += string2
 	string += ")\n\n\tswitch {\n\tcase err == sql.ErrNoRows:\n\t\treturn " + strings.ToLower(table) + ", errors.New(\"ERROR " + uppercaseFirst(table) + "::ReadById - No result\")"
@@ -294,7 +347,7 @@ func buildCruxFileContents(objects []TableObj, table string, database string) st
 
 			initialString += "\n\t\"models/" + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "\""
 			string += "\n\nfunc Get" + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "(Object " + uppercaseFirst(foreignKeys[i].TableName) + "Obj) (" + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "Obj, error) {"
-			string += "\n\tcon := db.GetConnection()\n\n\tvar " + strings.ToLower(foreignKeys[i].ReferencedTable.String) + " " + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "Obj"
+			string += "\n\tcon := connection.GetConnection()\n\n\tvar " + strings.ToLower(foreignKeys[i].ReferencedTable.String) + " " + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "Obj"
 			string += "\n\terr := con.QueryRow(\"SELECT * FROM " + foreignKeys[i].ReferencedTable.String + " INNER JOIN " + foreignKeys[i].TableName + " ON " + foreignKeys[i].ReferencedTable.String
 			string += "." + foreignKeys[i].ReferencedColumn.String + " = " + foreignKeys[i].TableName + "." + foreignKeys[i].ColumnName + " WHERE " + foreignKeys[i].TableName + "." + foreignKeys[i].ColumnName
 			string += " = ?\", Object." + uppercaseFirst(foreignKeys[i].ColumnName) + ").Scan(&" + strings.ToLower(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(objects2[0].Name)
