@@ -36,16 +36,55 @@ var tablesDone []string
 var foreignKeys []KeyObj
 var GOPATH string
 
-func Run(table string, database string, host string) error {
+var dbUsername string
+var dbPassword string
+
+func Run(table string, database string, host string, username string, password string) error {
+	dbUsername = username
+	dbPassword = password
+
 	GOPATH = os.Getenv("GOPATH")
 
 	//make sure models dir exists
 	if !exists(GOPATH + "/src/models") {
-		err := os.Mkdir(GOPATH + "/src/models", 0777)
+		err = os.Mkdir(GOPATH + "/src/models", 0777)
 		if err != nil {
 			return err
 		}
+
+		//give new directory full permissions
+                err = os.Chmod(GOPATH + "/src/connection", 0777)
+                if err != nil {
+                        return err
+                }
 	}
+
+	if !exists(GOPATH + "/src/connection") {
+		//create connection package
+	        err = os.Mkdir(GOPATH + "/src/connection", 0777)
+	        if err != nil {
+	                return err
+	        }
+
+        	//give new directory full permissions
+	        err = os.Chmod(GOPATH + "/src/connection", 0777)
+	        if err != nil {
+	                return err
+	        }
+	}
+
+
+	connectionFile, err := os.Create(GOPATH + "/src/connection/connection.go")
+        defer connectionFile.Close()
+                if err != nil {
+                        return err
+                }
+
+                contents := "package connection\n\nimport (\n\t\"database/sql\"\n\t_ \"github.com/go-sql-driver/mysql\"\n\t\"log\"\n)\n\nfunc GetConnection() *sql.DB {\n\tcon, err := sql.Open(\"mysql\", " + dbUsername + ":" + dbPassword + "@tcp(" + host + ":3306)/" + database + ")\n\tif err != nil {\n\t\tpanic(err)\n\t}\n\n\treturn con\n}"
+                _, err = connectionFile.WriteString(contents)
+                if err != nil {
+                        return err
+                }
 
 	cnt := 0
 	tables = append(tables, table)
@@ -74,7 +113,8 @@ func handleTable(table string, database string, host string) error {
 	tableNaming := uppercaseFirst(table)
 	log.Println("Generating Base Classes for: " + table)
 
-	con, err = sql.Open("mysql", DB_USERNAME + ":" + DB_PASSWORD + "@tcp(" + host + ":3306)/" + database)
+	con, err = sql.Open("mysql", dbUsername + ":" + dbPassword + "@tcp(" + host + ":3306)/" + database)
+
 	if err != nil {
 		return err
 	}
