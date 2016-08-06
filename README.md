@@ -17,6 +17,8 @@ host
 
 # usage - test.go
 
+Replace the {username} and {password} constants in gostruct.go to the credentials of your database.
+
     package main
 
     import (
