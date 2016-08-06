@@ -3,11 +3,14 @@ This is a library to auto-generate models with packages, structs, and basic meth
 
 # usage
 
+    go get github.com/jonathankentstevens/gostruct
+
 Replace the {username} and {password} constants in gostruct.go to the credentials of your database. Then run:
 
     go run build.go -table User -database main -host localhost
     
 A package with a struct and a method to read by the primary key will be created in the $GOPATH/src/models/ directory. It will also build packages for any other tables that have foreign keys of the table give.
+
 
 # implementation
 
