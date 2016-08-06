@@ -46,7 +46,7 @@ host
     
     Hostname or server of where the database is located
 
-# sample file - sample.go
+# sample file - User_Crux.go
 
     package User
 
