@@ -1,5 +1,5 @@
 # gostruct
-This is a library to auto-generate packages, structs, and basic methods of accessibility based on a MySQL database table and all other tables related through all foreign key relationships. 
+This is a library to auto-generate packages, structs, and basic methods of accessibility for a given MySQL database table and all other tables related through all foreign key relationships. 
 
 # flags 
 
