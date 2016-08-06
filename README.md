@@ -15,7 +15,7 @@ host
     
     Hostname or server of where the database is located
 
-# usage
+# usage - test.go
 
     package main
 
@@ -31,3 +31,7 @@ host
     	        panic(err)
     	}
     }
+
+    go run test.go -table user -database main -host localhost
+    
+A package with a struct and a method to read by the primary key will be created in the $GOPATH/src/models/ directory. It will also build packages for any other tables that have foreign keys of the table give.
