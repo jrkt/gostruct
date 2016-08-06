@@ -9,7 +9,7 @@ Replace the {username} and {password} constants in gostruct.go to the credential
 
     go run build.go -table User -database main -host localhost
     
-A package with a struct and a method to read by the primary key will be created in the $GOPATH/src/models/ directory. It will also build packages for any other tables that have foreign keys of the table give.
+A package with a struct and a method to read by the primary key as well as a method to handle updating the record will be created in the $GOPATH/src/models/{table} directory. It will also build packages for any other tables that have foreign keys of the table give. In addition, it will generate a connection package to share a connection between all your models to prevent multiple open database connections.
 
 
 # implementation
