@@ -1,6 +1,37 @@
 # gostruct
 This is a library to auto-generate models with packages, structs, and basic methods of accessibility for a given MySQL database table and all other tables related through all foreign key relationships. 
 
+# usage
+
+    go get github.com/jonathankentstevens/gostruct
+
+Replace the {username} and {password} constants in gostruct.go to the credentials of your database. Then run:
+
+    go run build.go -table User -database main -host localhost
+    
+A package with a struct and a method to read by the primary key as well as a method to handle updating the record will be created in the $GOPATH/src/models/{table} directory. It will also build packages for any other tables that have foreign keys of the table give. In addition, it will generate a connection package to share a connection between all your models to prevent multiple open database connections.
+
+
+# implementation
+
+    package main
+
+    import (
+    	"models/User"
+    	"log"
+    	"fmt"
+    )
+    
+    func main() {
+    	user, err := User.ReadById(12345)
+    	if err != nil {
+    		log.Println(err.Error())
+    	}
+    	
+    	user.Email = "test@email.com"
+    	User.Save(user)
+    }
+
 # flags 
 
 table
@@ -15,87 +46,77 @@ host
     
     Hostname or server of where the database is located
 
-# usage - test.go
+# sample file - User_Crux.go
 
-Replace the {username} and {password} constants in gostruct.go to the credentials of your database.
-
-    package main
+    package User
 
     import (
-    	_ "github.com/go-sql-driver/mysql"
-    	"github.com/jonathankentstevens/gostruct"
-    	"log"
+    	"database/sql"
+    	"connection"
+    	"reflect"
+    	"strconv"
+    	"errors"
     )
-
-    func main() {
-    	err := gostruct.Generate()
+    
+    type UserObj struct {
+    	Id		string
+    	Fname		sql.NullString
+    	Lname		sql.NullString
+    	Phone		sql.NullString
+    	Cell		sql.NullString
+    	Fax		sql.NullString
+    	Email		string
+    }
+    
+    var primaryKey = "Id"
+    
+    func Save(Object UserObj) {
+    	v := reflect.ValueOf(&Object).Elem()
+    	objType := v.Type()
+    
+    	firstValue := reflect.Value(v.Field(1)).String()
+    	if firstValue == "<sql.NullString Value>" {
+    		firstValue = "null"
+    	} else {
+    		firstValue = "'" + firstValue + "'"
+    	}
+    
+    	query := "UPDATE user SET " + objType.Field(1).Name + " = " + firstValue
+    
+    	for i := 2; i < v.NumField(); i++ {
+    		property := string(objType.Field(i).Name)
+    		value := reflect.Value(v.Field(i)).String()
+    		if value == "<sql.NullString Value>" {
+    			value = "null"
+    		} else {
+    			value = "'" + value + "'"
+    		}
+    
+    		query += ", " + property + " = " + value
+    	}
+    	query += " WHERE " + primaryKey + " = '" + Object.Id + "'"
+    
+    	con := connection.GetConnection()
+    	_, err := con.Exec(query)
     	if err != nil {
-    	        panic(err)
+    		panic(err.Error())
     	}
     }
-
-# run it
-
-    go run test.go -table user -database main -host localhost
     
-A package with a struct and a method to read by the primary key will be created in the $GOPATH/src/models/ directory. It will also build packages for any other tables that have foreign keys of the table give.
-
-# sample file - sample.go
-
-    package Home
-
-    import (
-            "database/sql"
-            "db/circlepix"
-            "errors"
-            "strconv"
-    )
+    func ReadById(id int) (UserObj, error) {
+    	con := connection.GetConnection()
     
-    type HomeObj struct {
-            Homeid                string
-            Mlsnum                sql.NullString
-            Altmlsnum             sql.NullString
-            Rooms                 sql.NullString
-            Baths                 sql.NullString
-            Sqft                  sql.NullString
-            Comments              sql.NullString
-            Updated               sql.NullString
-            Listdate              sql.NullString
-            Expiredate            sql.NullString
-            Askingprice           string
-            Addr                  string
-            City                  string
-            County                sql.NullString
-            State                 sql.NullString
-            Zip                   string
-            Country               string
-            Date_posted           string
-            Status                string
-            Id                    string
-            PropertyType          sql.NullString
-            PropertySubType       sql.NullString
-            FullBaths             sql.NullString
-            HalfBaths             sql.NullString
-            ThreeQuarterBaths     sql.NullString
-            QuarterBaths          sql.NullString
-            SellType              sql.NullString
-            Neighborhood          sql.NullString
-    }
+    	var user UserObj
+    	err := con.QueryRow("SELECT * FROM user WHERE Id = ?", strconv.Itoa(id)).Scan(&user.Id, &user.Fname, &user.Lname, &user.Phone, &user.Cell, &user.Fax, &user.Email)
     
-    func ReadById(id int) (HomeObj, error) {
-            con := db.GetConnection()
+    	switch {
+    	case err == sql.ErrNoRows:
+    		return user, errors.New("ERROR User::ReadById - No result")
+    	case err != nil:
+    		return user, errors.New("ERROR User::ReadById - " + err.Error())
+    	default:
+    		return user, nil
+    	}
     
-            var home HomeObj
-            err := con.QueryRow("SELECT * FROM home WHERE id = ?", strconv.Itoa(id)).Scan(&home.Homeid, &home.Mlsnum, &home.Altmlsnum, &home.Rooms, &home.Baths, &home.Sqft, &home.Comments, &home.Updated, &home.Listdate, &home.Expiredate, &home.Askingprice, &home.Addr, &home.City, &home.County, &home.State, &home.Zip, &home.Country, &home.Date_posted, &home.Status, &home.Id, &home.Photographerid, &home.Date_linked, &home.Contact_notes, &home.LeadGen, &home.Archived, &home.ExclusiveLeads, &home.Directory, &home.NeedsLinking, &home.VaPropertyId, &home.VaHomeStatus, &home.MlsName, &home.ExternalURL, &home.OfficeCode, &home.ExternalImagesUpdated, &home.DateMediaUpdated, &home.SellingPrice, &home.UpdateLOYTImages, &home.CorrectedCity, &home.PropertyType, &home.PropertySubType, &home.FullBaths, &home.HalfBaths, &home.ThreeQuarterBaths, &home.QuarterBaths, &home.SellType, &home.Neighborhood, &home.CustomVideoTitle, &home.IsWaterfront, &home.IsInForeclosure, &home.IsShortSale, &home.IsREO, &home.YearBuilt, &home.SourceImportScriptId, &home.MlsArea, &home.ListingStatus, &home.FrontImageLabel, &home.LastActiveInFeed, &home.DateFeedShowsUpdated)
-    
-            switch {
-            case err == sql.ErrNoRows:
-                    return home, errors.New("ERROR Home::ReadById - No result")
-            case err != nil:
-                    return home, errors.New("ERROR Home::ReadById - " + err.Error())
-            default:
-                    return home, nil
-            }
-    
-            return home, nil
+    	return user, nil
     }
