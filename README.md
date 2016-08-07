@@ -5,9 +5,26 @@ This is a library to auto-generate models with packages, structs, and basic meth
 
     go get github.com/jonathankentstevens/gostruct
 
-Replace the {username} and {password} constants in gostruct.go to the credentials of your database. Then run:
+Replace the {username} and {password} constants in gostruct.go to the credentials of your database. Then create a generate.go file with the following contents:
 
-    go run build.go -table User -database main -host localhost
+    package main
+
+    import (
+    	_ "github.com/go-sql-driver/mysql"
+    	"github.com/jonathankentstevens/gostruct"
+    	"log"
+    )
+    
+    func main() {
+    	err := gostruct.Generate()
+    	if err != nil {
+    		log.Fatalln(err)
+    	}
+    }
+    
+Then, run:
+
+    go run generate.go -table User -database main -host localhost
     
 A package with a struct and a method to read by the primary key as well as a method to handle updating the record will be created in the $GOPATH/src/models/{table} directory. It will also build packages for any other tables that have foreign keys of the table give. In addition, it will generate a connection package to share a connection between all your models to prevent multiple open database connections.
 
