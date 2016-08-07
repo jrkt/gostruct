@@ -4,8 +4,8 @@ import (
 	"flag"
 )
 
-const DB_USERNAME = "{username}";
-const DB_PASSWORD = "{password}";
+const DB_USERNAME = "devuser";
+const DB_PASSWORD = "L!ght@m@tch";
 
 func Generate() error {
 
