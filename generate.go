@@ -382,7 +382,7 @@ func Get` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `(Object ` +
 	case err == sql.ErrNoRows:
 		println("No result")
 	case err != nil:
-		panic(errors.New("ERROR Realtor::GetCompany - " + err.Error()))
+		panic(errors.New("ERROR Realtor::Get` + uppercaseFirst(foreignKeys[i].TableName) + ` - " + err.Error()))
 	default:
 		return ` + strings.ToLower(foreignKeys[i].ReferencedTable.String) + `
 	}
