@@ -89,7 +89,7 @@ port
     	Email		string  `email`
     }
     
-    var primaryKey = "Id"
+    var primaryKey = "id"
     
     func Save(Object *UserObj) {
     	v := reflect.ValueOf(&*Object).Elem()
@@ -127,7 +127,7 @@ port
     	con := connection.GetConnection()
     
     	var user UserObj
-    	err := con.QueryRow("SELECT * FROM user WHERE Id = ?", strconv.Itoa(id)).Scan(&user.Id, &user.Fname, &user.Lname, &user.Phone, &user.Cell, &user.Fax, &user.Email)
+    	err := con.QueryRow("SELECT * FROM user WHERE id = ?", strconv.Itoa(id)).Scan(&user.Id, &user.Fname, &user.Lname, &user.Phone, &user.Cell, &user.Fax, &user.Email)
     
     	switch {
     	case err == sql.ErrNoRows:
