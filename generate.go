@@ -254,7 +254,7 @@ func buildCruxFile(objects []TableObj, table string, database string) error {
 		if cntPK > 1 && object.Key == "PRI" {
 			string += ""
 		} else {
-			string += "\n\t" + uppercaseFirst(object.Name) + "\t\t" + dataType
+			string += "\n\t" + uppercaseFirst(object.Name) + "\t\t" + dataType + "\t\t`" + object.Name + "`"
 		}
 
 		if cntPK > 1 && object.Key == "PRI" {
@@ -285,11 +285,10 @@ func Save(Object ` + uppercaseFirst(table) + `Obj) {
 		}
 	}
 
-	query := "UPDATE ` + table + ` SET " + objType.Field(1).Name + " = " + firstValue
+	query := "UPDATE ` + table + ` SET " + string(objType.Field(1).Tag) + " = " + firstValue
 
 	for i := 2; i < v.NumField(); i++ {
 		propType := v.Field(i).Type()
-		property := string(objType.Field(i).Name)
 		value := ""
 		if propType == reflect.TypeOf(sql.NullString{}) {
 			if reflect.Value(v.Field(i)).Field(0).String() == "" {
@@ -305,7 +304,7 @@ func Save(Object ` + uppercaseFirst(table) + `Obj) {
 			}
 		}
 
-		query += ", " + property + " = " + value
+		query += ", " + string(objType.Field(i).Tag) + " = " + value
 	}
 	query += " WHERE " + primaryKey + " = '" + Object.` + uppercaseFirst(primaryKey) + ` + "'"
 
