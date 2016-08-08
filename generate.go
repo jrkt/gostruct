@@ -93,7 +93,7 @@ func handleTable(table string, database string, host string) error {
 		tablesDone = append(tablesDone, table)
 	}
 
-	log.Println("Generating Base Classes for: " + table)
+	log.Println("Generating Models for: " + table)
 
 	con, err = sql.Open("mysql", DB_USERNAME + ":" + DB_PASSWORD + "@tcp(" + host + ":3306)/" + database)
 
