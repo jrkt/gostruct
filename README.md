@@ -62,6 +62,10 @@ database
 host
     
     Hostname or server of where the database is located
+    
+port
+
+    Defaults to 3306 if not provided
 
 # sample file - User_Crux.go
 
