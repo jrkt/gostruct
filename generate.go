@@ -36,8 +36,12 @@ var tablesDone []string
 var foreignKeys []KeyObj
 var GOPATH string
 
-func Run(table string, database string, host string) error {
+func Run(table string, database string, host string, port string) error {
 	GOPATH = os.Getenv("GOPATH")
+
+	if port == "" {
+		port = "3306"
+	}
 
 	//make sure models dir exists
 	if !exists(GOPATH + "/src/models") {
@@ -72,7 +76,7 @@ func Run(table string, database string, host string) error {
 	cnt := 0
 	tables = append(tables, table)
 	for {
-		err = handleTable(tables[cnt], database, host)
+		err = handleTable(tables[cnt], database, host, port)
 		if err != nil {
 			return err
 		}
@@ -86,7 +90,7 @@ func Run(table string, database string, host string) error {
 	return nil
 }
 
-func handleTable(table string, database string, host string) error {
+func handleTable(table string, database string, host string, port string) error {
 	if inarray.InStringArray(table, tablesDone) {
 		return nil
 	} else {
@@ -95,7 +99,7 @@ func handleTable(table string, database string, host string) error {
 
 	log.Println("Generating Models for: " + table)
 
-	con, err = sql.Open("mysql", DB_USERNAME + ":" + DB_PASSWORD + "@tcp(" + host + ":3306)/" + database)
+	con, err = sql.Open("mysql", DB_USERNAME + ":" + DB_PASSWORD + "@tcp(" + host + ":" + port + ")/" + database)
 
 	if err != nil {
 		return err
@@ -139,7 +143,7 @@ func handleTable(table string, database string, host string) error {
 		}
 
 		//get ForeignKeys
-		rows2, err := con.Query("SELECT table_name, column_name, referenced_table_name, referenced_column_name FROM information_schema.key_column_usage WHERE table_name = ?", table)
+		rows2, err := con.Query("SELECT table_name, column_name, referenced_table_name, referenced_column_name FROM information_schema.key_column_usage WHERE table_name = ? AND table_schema = ?", table, database)
 
 		var key = KeyObj{}
 		foreignKeys = make([]KeyObj, 0)
@@ -335,7 +339,7 @@ func ReadById(id int) ` + uppercaseFirst(table) + `Obj {
 
 	//create foreign key methods
 	for i := 0; i < len(foreignKeys); i++ {
-		rows3, err := con.Query("SELECT column_name, is_nullable, column_key FROM information_schema.columns WHERE table_name = ?", foreignKeys[i].ReferencedTable.String)
+		rows3, err := con.Query("SELECT column_name, is_nullable, column_key FROM information_schema.columns WHERE table_name = ? AND table_schema = ?", foreignKeys[i].ReferencedTable.String, database)
 		defer rows3.Close()
 
 		var object TableObj
