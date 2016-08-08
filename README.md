@@ -80,19 +80,19 @@ port
     )
     
     type UserObj struct {
-    	Id		string
-    	Fname		sql.NullString
-    	Lname		sql.NullString
-    	Phone		sql.NullString
-    	Cell		sql.NullString
-    	Fax		sql.NullString
-    	Email		string
+    	Id		string  `id`
+    	Fname		sql.NullString `fname`
+    	Lname		sql.NullString  `lname`
+    	Phone		sql.NullString  `phone`
+    	Cell		sql.NullString  `cell`
+    	Fax		sql.NullString  `fax`
+    	Email		string  `email`
     }
     
     var primaryKey = "Id"
     
-    func Save(Object UserObj) {
-    	v := reflect.ValueOf(&Object).Elem()
+    func Save(Object *UserObj) {
+    	v := reflect.ValueOf(&*Object).Elem()
     	objType := v.Type()
     
     	firstValue := reflect.Value(v.Field(1)).String()
@@ -102,10 +102,9 @@ port
     		firstValue = "'" + firstValue + "'"
     	}
     
-    	query := "UPDATE user SET " + objType.Field(1).Name + " = " + firstValue
+    	query := "UPDATE user SET " + string(objType.Field(1).Tag) + " = " + firstValue
     
     	for i := 2; i < v.NumField(); i++ {
-    		property := string(objType.Field(i).Name)
     		value := reflect.Value(v.Field(i)).String()
     		if value == "<sql.NullString Value>" {
     			value = "null"
@@ -113,7 +112,7 @@ port
     			value = "'" + value + "'"
     		}
     
-    		query += ", " + property + " = " + value
+    		query += ", " + string(objType.Field(i).Tag) + " = " + value
     	}
     	query += " WHERE " + primaryKey + " = '" + Object.Id + "'"
     
