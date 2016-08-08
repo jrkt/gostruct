@@ -67,30 +67,7 @@ func Run(table string, database string, host string) error {
 		}
 	}
 
-	connectionFile, err := os.Create(GOPATH + "/src/connection/connection.go")
-	defer connectionFile.Close()
-	if err != nil {
-		return err
-	}
-	contents := `package connection
-
-import (
-	"database/sql"
-	_ "github.com/go-sql-driver/mysql"
-)
-
-func GetConnection() *sql.DB {
-	con, err := sql.Open("mysql", "` + DB_USERNAME + `:` + DB_PASSWORD + `@tcp(` + host + `:3306)/` + database + `")
-	if err != nil {
-		panic(err)
-	}
-
-	return con
-}`
-	_, err = connectionFile.WriteString(contents)
-	if err != nil {
-		return err
-	}
+	err = buildConnectionFile(host, database)
 
 	cnt := 0
 	tables = append(tables, table)
@@ -116,7 +93,6 @@ func handleTable(table string, database string, host string) error {
 		tablesDone = append(tablesDone, table)
 	}
 
-	tableNaming := uppercaseFirst(table)
 	log.Println("Generating Base Classes for: " + table)
 
 	con, err = sql.Open("mysql", DB_USERNAME + ":" + DB_PASSWORD + "@tcp(" + host + ":3306)/" + database)
@@ -196,53 +172,49 @@ func handleTable(table string, database string, host string) error {
 			}
 		}
 
-		cruxFilePath := dir + tableNaming + "_Crux.go"
-		if exists(cruxFilePath) {
-			err = os.Remove(cruxFilePath)
-			if err != nil {
-				return err
-			}
-		}
-
-		cruxFile, err := os.Create(cruxFilePath)
-		defer cruxFile.Close()
-		if err != nil {
-			return err
-		}
-
-		contents := buildCruxFileContents(objects, table, database)
-		_, err = cruxFile.WriteString(contents)
-		if err != nil {
-			return err
-		}
-
-		cmd := exec.Command("go", "fmt", tableNaming + "/" + tableNaming + "_Crux.go")
-		cmd.Run()
+		//handle Crux file
+		err = buildCruxFile(objects, table, database)
 
 		//handle Normal file
-		var normalFile *os.File
-		normalFilePath := dir + tableNaming + ".go"
-		if !exists(normalFilePath) {
-			normalFile, err = os.Create(normalFilePath)
-			defer normalFile.Close()
-			if err != nil {
-				return err
-			}
-
-			contents = buildNormalFileContents(table)
-			_, err = normalFile.WriteString(contents)
-			if err != nil {
-				return err
-			}
-		}
-		cmd = exec.Command("go", "fmt", tableNaming + "/" + tableNaming + ".go")
-		cmd.Run()
+		err = buildNormalFile(table)
 	}
 
 	return nil
 }
 
-func buildCruxFileContents(objects []TableObj, table string, database string) string {
+func buildConnectionFile(host string, database string) error {
+	connectionFile, err := os.Create(GOPATH + "/src/connection/connection.go")
+	defer connectionFile.Close()
+	if err != nil {
+		return err
+	}
+	contents := `package connection
+
+import (
+	"database/sql"
+	_ "github.com/go-sql-driver/mysql"
+)
+
+func GetConnection() *sql.DB {
+	con, err := sql.Open("mysql", "` + DB_USERNAME + `:` + DB_PASSWORD + `@tcp(` + host + `:3306)/` + database + `")
+	if err != nil {
+		panic(err)
+	}
+
+	return con
+}`
+	_, err = connectionFile.WriteString(contents)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func buildCruxFile(objects []TableObj, table string, database string) error {
+
+	tableNaming := uppercaseFirst(table)
+	dir := GOPATH + "/src/models/" + uppercaseFirst(table) + "/"
 
 	var usedColumns []UsedColumn
 	initialString := "package " + uppercaseFirst(table) + "\n\n"
@@ -342,22 +314,23 @@ func Save(Object ` + uppercaseFirst(table) + `Obj) {
 
 	//create ReadById method
 	string += `
-func ReadById(id int) (` + uppercaseFirst(table) + `Obj, error) {
-	con := connection.GetConnection()
 
+func ReadById(id int) ` + uppercaseFirst(table) + `Obj {
 	var ` + strings.ToLower(table) + ` ` + uppercaseFirst(table) + `Obj
+
+	con := connection.GetConnection()
 	err := con.QueryRow("SELECT * FROM ` + table + ` WHERE ` + primaryKey + ` = ?", strconv.Itoa(id)).Scan(&` + strings.ToLower(table) + "." + uppercaseFirst(objects[0].Name) + string2 + `)
 
 	switch {
 	case err == sql.ErrNoRows:
-		return ` + strings.ToLower(table) + `, errors.New("ERROR ` + uppercaseFirst(table) + `::ReadById - No result")
+		println("No result for Id: " + strconv.Itoa(id))
 	case err != nil:
-		return ` + strings.ToLower(table) + `, errors.New("ERROR ` + uppercaseFirst(table) + `::ReadById - " + err.Error())
+		panic(errors.New("ERROR ` + uppercaseFirst(table) + `::ReadById - " + err.Error()))
 	default:
-		return ` + strings.ToLower(table) + `, nil
+		return ` + strings.ToLower(table) + `
 	}
 
-	return ` + strings.ToLower(table) + `, nil
+	return ` + strings.ToLower(table) + `
 }`
 
 	//create foreign key methods
@@ -387,10 +360,11 @@ func ReadById(id int) (` + uppercaseFirst(table) + `Obj, error) {
 			initialString += "\n\t\"models/" + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "\""
 
 			string += `
-func Get` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `(Object ` + uppercaseFirst(foreignKeys[i].TableName) + `Obj) (` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `Obj, error) {
-	con := connection.GetConnection()
 
+func Get` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `(Object ` + uppercaseFirst(foreignKeys[i].TableName) + `Obj) ` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `Obj {
 	var ` + strings.ToLower(foreignKeys[i].ReferencedTable.String) + ` ` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `Obj
+
+	con := connection.GetConnection()
 	err := con.QueryRow("SELECT ` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `.* FROM ` + foreignKeys[i].ReferencedTable.String + ` INNER JOIN ` + foreignKeys[i].TableName + ` ON ` + foreignKeys[i].ReferencedTable.String + `.` + foreignKeys[i].ReferencedColumn.String + ` = ` + foreignKeys[i].TableName + "." + foreignKeys[i].ColumnName + ` WHERE ` + foreignKeys[i].TableName + "." + foreignKeys[i].ColumnName + ` = ?", Object.` + uppercaseFirst(foreignKeys[i].ColumnName) + `).Scan(&` + strings.ToLower(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(objects2[0].Name)
 
 			for o := 1; o < len(objects2); o++ {
@@ -406,25 +380,66 @@ func Get` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `(Object ` +
 
 	switch {
 	case err == sql.ErrNoRows:
-		return ` + strings.ToLower(foreignKeys[i].ReferencedTable.String) + `, errors.New("ERROR Realtor::GetCompany - No result")
+		println("No result")
 	case err != nil:
-		return ` + strings.ToLower(foreignKeys[i].ReferencedTable.String) + `, errors.New("ERROR Realtor::GetCompany - " + err.Error())
+		panic(errors.New("ERROR Realtor::GetCompany - " + err.Error()))
 	default:
-		return ` + strings.ToLower(foreignKeys[i].ReferencedTable.String) + `, nil
+		return ` + strings.ToLower(foreignKeys[i].ReferencedTable.String) + `
 	}
 
-	return ` + strings.ToLower(foreignKeys[i].ReferencedTable.String) + `, nil
+	return ` + strings.ToLower(foreignKeys[i].ReferencedTable.String) + `
 }`
 		}
 	}
 	initialString += "\n)"
 	contents := initialString + string
 
-	return contents
+	cruxFilePath := dir + tableNaming + "_Crux.go"
+	if exists(cruxFilePath) {
+		err = os.Remove(cruxFilePath)
+		if err != nil {
+			return err
+		}
+	}
+
+	cruxFile, err := os.Create(cruxFilePath)
+	defer cruxFile.Close()
+	if err != nil {
+		return err
+	}
+
+	_, err = cruxFile.WriteString(contents)
+	if err != nil {
+		return err
+	}
+
+	cmd := exec.Command("go", "fmt", tableNaming + "/" + tableNaming + "_Crux.go")
+	cmd.Run()
+
+	return nil
 }
 
-func buildNormalFileContents(table string) string {
-	string := "package " + uppercaseFirst(table) + "\n\n//Methods Here"
+func buildNormalFile(table string) error {
+	tableNaming := uppercaseFirst(table)
+	dir := GOPATH + "/src/models/" + uppercaseFirst(table) + "/"
 
-	return string
+	var normalFile *os.File
+	normalFilePath := dir + tableNaming + ".go"
+	if !exists(normalFilePath) {
+		normalFile, err = os.Create(normalFilePath)
+		defer normalFile.Close()
+		if err != nil {
+			return err
+		}
+
+		contents := "package " + uppercaseFirst(table) + "\n\n//Methods Here"
+		_, err = normalFile.WriteString(contents)
+		if err != nil {
+			return err
+		}
+	}
+	cmd := exec.Command("go", "fmt", tableNaming + "/" + tableNaming + ".go")
+	cmd.Run()
+
+	return nil
 }
