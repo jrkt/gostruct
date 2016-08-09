@@ -254,7 +254,7 @@ func buildCruxFile(objects []TableObj, table string, database string) error {
 		if cntPK > 1 && object.Key == "PRI" {
 			string += ""
 		} else {
-			string += "\n\t" + uppercaseFirst(object.Name) + "\t\t" + dataType + "\t\t`" + object.Name + "`"
+			string += "\n\t" + uppercaseFirst(object.Name) + "\t\t" + dataType + "\t\t`column:\"" + object.Name + "\"`"
 		}
 
 		if cntPK > 1 && object.Key == "PRI" {
@@ -285,7 +285,20 @@ func Save(Object ` + uppercaseFirst(table) + `Obj) {
 		}
 	}
 
-	query := "UPDATE ` + table + ` SET " + string(objType.Field(1).Tag) + " = " + firstValue
+	var values string
+	var columns string
+	var query string
+
+	if Object.` + uppercaseFirst(primaryKey) + ` == "" {
+		query = "INSERT INTO ` + table + ` "
+		columns += "("
+		if firstValue != "null" {
+			columns += string(objType.Field(1).Tag.Get("column")) + ","
+			values += firstValue + ","
+		}
+	} else {
+		query = "UPDATE ` + table + ` SET " + string(objType.Field(1).Tag.Get("column")) + " = " + firstValue
+	}
 
 	for i := 2; i < v.NumField(); i++ {
 		propType := v.Field(i).Type()
@@ -304,9 +317,20 @@ func Save(Object ` + uppercaseFirst(table) + `Obj) {
 			}
 		}
 
-		query += ", " + string(objType.Field(i).Tag) + " = " + value
+		if Object.` + uppercaseFirst(primaryKey) + ` == "" {
+			if value != "null" {
+				columns += string(objType.Field(i).Tag.Get("column")) + ","
+				values += value + ","
+			}
+		} else {
+			query += ", " + string(objType.Field(i).Tag.Get("column")) + " = " + value
+		}
 	}
-	query += " WHERE " + primaryKey + " = '" + Object.` + uppercaseFirst(primaryKey) + ` + "'"
+	if Object.` + uppercaseFirst(primaryKey) + ` == "" {
+		query += columns[:len(columns) - 1] + ") VALUES (" + values[:len(values) - 1] + ")"
+	} else {
+		query += " WHERE " + primaryKey + " = '" + Object.` + uppercaseFirst(primaryKey) + ` + "'"
+	}
 
 	con := connection.GetConnection()
 	_, err := con.Exec(query)
@@ -326,7 +350,7 @@ func ReadById(id int) ` + uppercaseFirst(table) + `Obj {
 
 	switch {
 	case err == sql.ErrNoRows:
-		println("No result for Id: " + strconv.Itoa(id))
+		println("No result for ` + primaryKey + `: " + strconv.Itoa(id))
 	case err != nil:
 		panic(errors.New("ERROR ` + uppercaseFirst(table) + `::ReadById - " + err.Error()))
 	default:
