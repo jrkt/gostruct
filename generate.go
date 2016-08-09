@@ -337,6 +337,16 @@ func Save(Object ` + uppercaseFirst(table) + `Obj) {
 	if err != nil {
 		panic(err.Error())
 	}
+}
+
+func Delete(Object ` + uppercaseFirst(table) + `Obj) {
+	query := "DELETE FROM ` + table + ` WHERE ` + primaryKey + ` = '" + Object.` + uppercaseFirst(primaryKey) + ` + "'"
+
+	con := connection.GetConnection()
+	_, err := con.Exec(query)
+	if err != nil {
+		panic(err.Error())
+	}
 }`
 
 	//create ReadById method
