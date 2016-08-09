@@ -40,13 +40,18 @@ A package with a struct and a method to read by the primary key as well as a met
     )
     
     func main() {
-    	user, err := User.ReadById(12345)
-    	if err != nil {
-    		log.Println(err.Error())
-    	}
-    	
+        //retrieve existing user by id
+    	user := User.ReadById(12345)
     	user.Email = "test@email.com"
     	User.Save(user)
+    	
+    	//create new user
+    	user := User.UserObj{}
+    	user.Email = "test@email.com"
+    	User.Save(user)
+    	
+    	//delete user
+    	User.Delete(user)
     }
 
 # flags 
@@ -91,30 +96,81 @@ port
     
     var primaryKey = "id"
     
-    func Save(Object *UserObj) {
-    	v := reflect.ValueOf(&*Object).Elem()
+    func Save(Object UserObj) {
+    	v := reflect.ValueOf(&Object).Elem()
     	objType := v.Type()
     
-    	firstValue := reflect.Value(v.Field(1)).String()
-    	if firstValue == "<sql.NullString Value>" {
-    		firstValue = "null"
+    	var firstValue string
+    	if v.Field(1).Type() == reflect.TypeOf(sql.NullString{}) {
+    		if reflect.Value(v.Field(1)).Field(0).String() == "" {
+    			firstValue = "null"
+    		} else {
+    			firstValue = "'" + reflect.Value(v.Field(1)).Field(0).String() + "'"
+    		}
     	} else {
-    		firstValue = "'" + firstValue + "'"
+    		if reflect.Value(v.Field(0)).String() == "" {
+    			firstValue = "null"
+    		} else {
+    			firstValue = "'" + reflect.Value(v.Field(1)).String() + "'"
+    		}
     	}
     
-    	query := "UPDATE user SET " + string(objType.Field(1).Tag) + " = " + firstValue
+    	var values string
+    	var columns string
+    	var query string
+    
+    	if Object.Id == "" {
+    		query = "INSERT INTO User "
+    		columns += "("
+    		if firstValue != "null" {
+    			columns += string(objType.Field(1).Tag.Get("column")) + ","
+    			values += firstValue + ","
+    		}
+    	} else {
+    		query = "UPDATE User SET " + string(objType.Field(1).Tag.Get("column")) + " = " + firstValue
+    	}
     
     	for i := 2; i < v.NumField(); i++ {
-    		value := reflect.Value(v.Field(i)).String()
-    		if value == "<sql.NullString Value>" {
-    			value = "null"
+    		propType := v.Field(i).Type()
+    		value := ""
+    		if propType == reflect.TypeOf(sql.NullString{}) {
+    			if reflect.Value(v.Field(i)).Field(0).String() == "" {
+    				value = "null"
+    			} else {
+    				value = "'" + reflect.Value(v.Field(i)).Field(0).String() + "'"
+    			}
     		} else {
-    			value = "'" + value + "'"
+    			if reflect.Value(v.Field(i)).String() == "" {
+    				value = "null"
+    			} else {
+    				value = "'" + reflect.Value(v.Field(i)).String() + "'"
+    			}
     		}
     
-    		query += ", " + string(objType.Field(i).Tag) + " = " + value
+    		if Object.Id == "" {
+    			if value != "null" {
+    				columns += string(objType.Field(i).Tag.Get("column")) + ","
+    				values += value + ","
+    			}
+    		} else {
+    			query += ", " + string(objType.Field(i).Tag.Get("column")) + " = " + value
+    		}
     	}
-    	query += " WHERE " + primaryKey + " = '" + Object.Id + "'"
+    	if Object.Id == "" {
+    		query += columns[:len(columns) - 1] + ") VALUES (" + values[:len(values) - 1] + ")"
+    	} else {
+    		query += " WHERE " + primaryKey + " = '" + Object.Id + "'"
+    	}
+    
+    	con := connection.GetConnection()
+    	_, err := con.Exec(query)
+    	if err != nil {
+    		panic(err.Error())
+    	}
+    }
+    
+    func Delete(Object UserObj) {
+    	query := "DELETE FROM User WHERE id = '" + Object.Id + "'"
     
     	con := connection.GetConnection()
     	_, err := con.Exec(query)
