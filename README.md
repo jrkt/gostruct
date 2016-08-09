@@ -86,12 +86,12 @@ port
     
     type UserObj struct {
     	Id		string  `id`
-    	Fname		sql.NullString `fname`
-    	Lname		sql.NullString  `lname`
-    	Phone		sql.NullString  `phone`
-    	Cell		sql.NullString  `cell`
-    	Fax		sql.NullString  `fax`
-    	Email		string  `email`
+    	Fname		sql.NullString `column:"fname"`
+    	Lname		sql.NullString  `column:"lname"`
+    	Phone		sql.NullString  `column:"phone"`
+    	Cell		sql.NullString  `column:"cell"`
+    	Fax		sql.NullString  `column:"fax"`
+    	Email		string  `column:"email"`
     }
     
     var primaryKey = "id"
