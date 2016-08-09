@@ -40,13 +40,18 @@ A package with a struct and a method to read by the primary key as well as a met
     )
     
     func main() {
-    	user, err := User.ReadById(12345)
-    	if err != nil {
-    		log.Println(err.Error())
-    	}
-    	
+        //retrieve existing user by id
+    	user := User.ReadById(12345)
     	user.Email = "test@email.com"
     	User.Save(user)
+    	
+    	//create new user
+    	user := User.UserObj{}
+    	user.Email = "test@email.com"
+    	User.Save(user)
+    	
+    	//delete user
+    	User.Delete(user)
     }
 
 # flags 
