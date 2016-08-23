@@ -258,7 +258,7 @@ import (
 		}
 		if cntPK > 1 && object.Key == "PRI" {
 			string2 += ""
-		} else {
+		} else if i > 0 {
 			string2 += ", &object." + uppercaseFirst(object.Name)
 		}
 		string += "\n\t" + uppercaseFirst(object.Name) + "\t\t" + dataType + "\t\t`column:\"" + object.Name + "\"`"
@@ -414,7 +414,9 @@ func (Object ` + uppercaseFirst(table) + `Obj) Get` + uppercaseFirst(foreignKeys
 					if object2.Key == "PRI" {
 						primaryKey = object2.Name
 					}
-					string += ", &object." + uppercaseFirst(object2.Name)
+					if o > 0 {
+						string += ", &object." + uppercaseFirst(object2.Name)
+					}
 				}
 
 				string += `)
