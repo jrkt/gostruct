@@ -267,7 +267,6 @@ import (
 
 	if cntPK == 1 {
 		importString += `
-			"database/sql"
 			"reflect"
 			"db/` + database + `"`
 		string += "\n\nvar primaryKey = \"" + primaryKey + "\"\n"
