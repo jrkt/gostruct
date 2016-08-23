@@ -183,20 +183,11 @@ all
     	}
     }
     
-    func ReadById(id int) (UserObj, error) {
+    func ReadById(id int) UserObj {
     	con := connection.GetConnection()
     
     	var user UserObj
-    	err := con.QueryRow("SELECT * FROM user WHERE id = ?", strconv.Itoa(id)).Scan(&user.Id, &user.Fname, &user.Lname, &user.Phone, &user.Cell, &user.Fax, &user.Email)
+    	con.QueryRow("SELECT * FROM user WHERE id = ?", strconv.Itoa(id)).Scan(&user.Id, &user.Fname, &user.Lname, &user.Phone, &user.Cell, &user.Fax, &user.Email)
     
-    	switch {
-    	case err == sql.ErrNoRows:
-    		return user, errors.New("ERROR User::ReadById - No result")
-    	case err != nil:
-    		return user, errors.New("ERROR User::ReadById - " + err.Error())
-    	default:
-    		return user, nil
-    	}
-    
-    	return user, nil
+    	return user
     }
