@@ -39,7 +39,7 @@ func Generate() error {
 			}
 		}
 	} else {
-		if *table == "" || *database == "" || *host == "" {
+		if (*table == "" && *all != "true") || *database == "" || *host == "" {
 			return errors.New("You must include the 'table', 'database', and 'host' flags")
 		} else {
 			err = Run(*table, *database, *host, *port)
