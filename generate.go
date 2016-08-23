@@ -6,7 +6,6 @@ import (
 	"log"
 	"errors"
 	"os"
-	"strings"
 	"os/exec"
 	"utils/inarray"
 )
@@ -181,6 +180,9 @@ func handleTable(table string, database string, host string, port string) error 
 
 		//handle Normal file
 		err = buildNormalFile(table)
+
+		//handle Test file
+		err = buildTestFile(table)
 	}
 
 	return nil
@@ -221,11 +223,15 @@ func buildCruxFile(objects []TableObj, table string, database string) error {
 	dir := GOPATH + "/src/models/" + uppercaseFirst(table) + "/"
 
 	var usedColumns []UsedColumn
-	initialString := "package " + uppercaseFirst(table) + "\n\n"
-	initialString += "import (\n\t\"database/sql\"\n\t\"connection\"\n\t\"reflect\"\n\t\"strconv\"\n\t\"errors\""
+	initialString := `package ` + uppercaseFirst(table)
+	importString := `
+
+import (
+	"database/sql"`
 
 	string := "\n\ntype " + uppercaseFirst(table) + "Obj struct {"
 	string2 := ""
+	contents := ""
 
 	cntPK := 0
 	Loop:
@@ -250,29 +256,34 @@ func buildCruxFile(objects []TableObj, table string, database string) error {
 		} else {
 			dataType = "sql.NullString"
 		}
-
-		if cntPK > 1 && object.Key == "PRI" {
-			string += ""
-		} else {
-			string += "\n\t" + uppercaseFirst(object.Name) + "\t\t" + dataType + "\t\t`column:\"" + object.Name + "\"`"
-		}
-
 		if cntPK > 1 && object.Key == "PRI" {
 			string2 += ""
-		} else if i > 0 {
-			string2 += ", &" + strings.ToLower(table) + "." + uppercaseFirst(object.Name)
+		} else {
+			string2 += ", &object." + uppercaseFirst(object.Name)
 		}
+		string += "\n\t" + uppercaseFirst(object.Name) + "\t\t" + dataType + "\t\t`column:\"" + object.Name + "\"`"
 	}
-	string += "\n}\n\nvar primaryKey = \"" + primaryKey + "\"\n"
+	string += "\n}"
 
-	string += `
+	if cntPK == 1 {
+		importString += `
+			"database/sql"
+			"reflect"
+			"db/` + database + `"`
+		string += "\n\nvar primaryKey = \"" + primaryKey + "\"\n"
+
+		string += `
+func Create() *` + uppercaseFirst(table) + `Obj {
+	return &` + uppercaseFirst(table) + `Obj{}
+}
+
 func (Object ` + uppercaseFirst(table) + `Obj) Save() {
 	v := reflect.ValueOf(&Object).Elem()
 	objType := v.Type()
 
 	var firstValue string
-	if v.Field(1).Type() == reflect.TypeOf(sql.NullString{}) {
-		if reflect.Value(v.Field(1)).Field(0).String() == "" {
+	if v.Field(0).Type() == reflect.TypeOf(sql.NullString{}) {
+		if reflect.Value(v.Field(0)).Field(0).String() == "" {
 			firstValue = "null"
 		} else {
 			firstValue = "'" + reflect.Value(v.Field(1)).Field(0).String() + "'"
@@ -300,7 +311,7 @@ func (Object ` + uppercaseFirst(table) + `Obj) Save() {
 		query = "UPDATE ` + table + ` SET " + string(objType.Field(1).Tag.Get("column")) + " = " + firstValue
 	}
 
-	for i := 2; i < v.NumField(); i++ {
+	for i := 1; i < v.NumField(); i++ {
 		propType := v.Field(i).Type()
 		value := ""
 		if propType == reflect.TypeOf(sql.NullString{}) {
@@ -332,7 +343,7 @@ func (Object ` + uppercaseFirst(table) + `Obj) Save() {
 		query += " WHERE " + primaryKey + " = '" + Object.` + uppercaseFirst(primaryKey) + ` + "'"
 	}
 
-	con := connection.GetConnection()
+	con := db.GetConnection()
 	_, err := con.Exec(query)
 	if err != nil {
 		panic(err.Error())
@@ -342,76 +353,80 @@ func (Object ` + uppercaseFirst(table) + `Obj) Save() {
 func (Object ` + uppercaseFirst(table) + `Obj) Delete() {
 	query := "DELETE FROM ` + table + ` WHERE ` + primaryKey + ` = '" + Object.` + uppercaseFirst(primaryKey) + ` + "'"
 
-	con := connection.GetConnection()
+	con := db.GetConnection()
 	_, err := con.Exec(query)
 	if err != nil {
 		panic(err.Error())
 	}
 }`
 
-	//create ReadById method
-	string += `
+		//create ReadById method
+		string += `
 
-func ReadById(id int) ` + uppercaseFirst(table) + `Obj {
+func ReadById(id string) ` + uppercaseFirst(table) + `Obj {
 	var object ` + uppercaseFirst(table) + `Obj
 
-	con := connection.GetConnection()
+	con := db.GetConnection()
 	con.QueryRow("SELECT * FROM ` + table + ` WHERE ` + primaryKey + ` = ?", id).Scan(&object.` + uppercaseFirst(objects[0].Name) + string2 + `)
 
 	return object
 }`
 
-	//create foreign key methods
-	for i := 0; i < len(foreignKeys); i++ {
-		rows3, err := con.Query("SELECT column_name, is_nullable, column_key FROM information_schema.columns WHERE table_name = ? AND table_schema = ?", foreignKeys[i].ReferencedTable.String, database)
-		defer rows3.Close()
-
-		var object TableObj
-		var objects2 []TableObj = make([]TableObj, 0)
-
-		if err != nil {
-			log.Fatalln(err.Error())
-		} else {
-			for rows3.Next() {
-				rows3.Scan(&object.Name, &object.IsNullable, &object.Key)
-				objects2 = append(objects2, object)
-			}
-		}
-
-		if len(objects2) == 0 {
-			log.Fatalln(errors.New("No results for table: " + foreignKeys[i].ReferencedTable.String))
-		} else {
-			if uppercaseFirst(foreignKeys[i].ReferencedTable.String) == table {
+		//create foreign key methods
+		for i := 0; i < len(foreignKeys); i++ {
+			if foreignKeys[i].ReferencedTable.String == "DatabaseEnum" {
 				continue
 			}
+			rows3, err := con.Query("SELECT column_name, is_nullable, column_key FROM information_schema.columns WHERE table_name = ? AND table_schema = ?", foreignKeys[i].ReferencedTable.String, database)
+			defer rows3.Close()
 
-			initialString += "\n\t\"models/" + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "\""
+			var object TableObj
+			var objects2 []TableObj = make([]TableObj, 0)
 
-			string += `
+			if err != nil {
+				log.Fatalln(err.Error())
+			} else {
+				for rows3.Next() {
+					rows3.Scan(&object.Name, &object.IsNullable, &object.Key)
+					objects2 = append(objects2, object)
+				}
+			}
+
+			if len(objects2) == 0 {
+				log.Fatalln(errors.New("No results for table: " + foreignKeys[i].ReferencedTable.String))
+			} else {
+				if uppercaseFirst(foreignKeys[i].ReferencedTable.String) == table {
+					continue
+				}
+
+				importString += "\n\t\"models/" + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "\""
+
+				string += `
 
 func (Object ` + uppercaseFirst(table) + `Obj) Get` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `() ` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `Obj {
 	var object ` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `Obj
 
-	con := connection.GetConnection()
+	con := db.GetConnection()
 	con.QueryRow("SELECT ` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `.* FROM ` + foreignKeys[i].ReferencedTable.String + ` INNER JOIN ` + foreignKeys[i].TableName + ` ON ` + foreignKeys[i].ReferencedTable.String + `.` + foreignKeys[i].ReferencedColumn.String + ` = ` + foreignKeys[i].TableName + "." + foreignKeys[i].ColumnName + ` WHERE ` + foreignKeys[i].TableName + "." + foreignKeys[i].ColumnName + ` = ?", Object.` + uppercaseFirst(foreignKeys[i].ColumnName) + `).Scan(&object.` + uppercaseFirst(objects2[0].Name)
 
-			for o := 1; o < len(objects2); o++ {
-				object2 := objects2[o]
+				for o := 0; o < len(objects2); o++ {
+					object2 := objects2[o]
 
-				if object2.Key == "PRI" {
-					primaryKey = object2.Name
+					if object2.Key == "PRI" {
+						primaryKey = object2.Name
+					}
+					string += ", &object." + uppercaseFirst(object2.Name)
 				}
-				string += ", &object." + uppercaseFirst(object2.Name)
-			}
 
-			string += `)
+				string += `)
 
 	return object
 }`
+			}
 		}
 	}
-	initialString += "\n)"
-	contents := initialString + string
+	importString += "\n)"
+	contents = initialString + importString + string
 
 	cruxFilePath := dir + tableNaming + "_Crux.go"
 	if exists(cruxFilePath) {
@@ -458,6 +473,39 @@ func buildNormalFile(table string) error {
 		}
 	}
 	cmd := exec.Command("go", "fmt", tableNaming + "/" + tableNaming + ".go")
+	cmd.Run()
+
+	return nil
+}
+
+func buildTestFile(table string) error {
+	tableNaming := uppercaseFirst(table)
+	dir := GOPATH + "/src/models/" + uppercaseFirst(table) + "/"
+
+	var testFile *os.File
+	testFilePath := dir + tableNaming + "_test.go"
+	if !exists(testFilePath) {
+		testFile, err = os.Create(testFilePath)
+		defer testFile.Close()
+		if err != nil {
+			return err
+		}
+
+		contents := `package ` + tableNaming + `_test
+
+		import (
+			"testing"
+		)
+
+		func TestSomething(t *testing.T) {
+			//test stuff here..
+		}`
+		_, err = testFile.WriteString(contents)
+		if err != nil {
+			return err
+		}
+	}
+	cmd := exec.Command("go", "fmt", tableNaming + "/" + tableNaming + "_test.go")
 	cmd.Run()
 
 	return nil
