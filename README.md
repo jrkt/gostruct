@@ -71,6 +71,10 @@ host
 port
 
     Defaults to 3306 if not provided
+    
+all
+
+    If this option is passed in as "true", it will run for all tables based on the database
 
 # sample file - User_Crux.go
 
