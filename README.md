@@ -43,15 +43,15 @@ A package with a struct and a method to read by the primary key as well as a met
         //retrieve existing user by id
     	user := User.ReadById(12345)
     	user.Email = "test@email.com"
-    	User.Save(user)
+    	user.Save()
     	
     	//create new user
     	user := User.UserObj{}
     	user.Email = "test@email.com"
-    	User.Save(user)
+    	user.Save()
     	
     	//delete user
-    	User.Delete(user)
+    	user.Delete()
     }
 
 # flags 
@@ -100,7 +100,7 @@ all
     
     var primaryKey = "id"
     
-    func Save(Object UserObj) {
+    func (Object UserObj) Save() {
     	v := reflect.ValueOf(&Object).Elem()
     	objType := v.Type()
     
@@ -173,7 +173,7 @@ all
     	}
     }
     
-    func Delete(Object UserObj) {
+    func (Object UserObj) Delete() {
     	query := "DELETE FROM User WHERE id = '" + Object.Id + "'"
     
     	con := connection.GetConnection()
