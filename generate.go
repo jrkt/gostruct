@@ -266,7 +266,7 @@ func buildCruxFile(objects []TableObj, table string, database string) error {
 	string += "\n}\n\nvar primaryKey = \"" + primaryKey + "\"\n"
 
 	string += `
-func Save(Object ` + uppercaseFirst(table) + `Obj) {
+func (Object ` + uppercaseFirst(table) + `Obj) Save() {
 	v := reflect.ValueOf(&Object).Elem()
 	objType := v.Type()
 
@@ -339,7 +339,7 @@ func Save(Object ` + uppercaseFirst(table) + `Obj) {
 	}
 }
 
-func Delete(Object ` + uppercaseFirst(table) + `Obj) {
+func (Object ` + uppercaseFirst(table) + `Obj) Delete() {
 	query := "DELETE FROM ` + table + ` WHERE ` + primaryKey + ` = '" + Object.` + uppercaseFirst(primaryKey) + ` + "'"
 
 	con := connection.GetConnection()
@@ -398,7 +398,7 @@ func ReadById(id int) ` + uppercaseFirst(table) + `Obj {
 
 			string += `
 
-func Get` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `(Object ` + uppercaseFirst(foreignKeys[i].TableName) + `Obj) ` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `Obj {
+func (Object ` + uppercaseFirst(foreignKeys[i].TableName) + `Obj) Get` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `() ` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `Obj {
 	var ` + strings.ToLower(foreignKeys[i].ReferencedTable.String) + ` ` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `Obj
 
 	con := connection.GetConnection()
