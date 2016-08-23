@@ -398,7 +398,7 @@ func ReadById(id int) ` + uppercaseFirst(table) + `Obj {
 
 			string += `
 
-func (Object ` + uppercaseFirst(foreignKeys[i].TableName) + `Obj) Get` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `() ` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `Obj {
+func (Object ` + uppercaseFirst(table) + `Obj) Get` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `() ` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `Obj {
 	var ` + strings.ToLower(foreignKeys[i].ReferencedTable.String) + ` ` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `Obj
 
 	con := connection.GetConnection()
