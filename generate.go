@@ -353,21 +353,12 @@ func (Object ` + uppercaseFirst(table) + `Obj) Delete() {
 	string += `
 
 func ReadById(id int) ` + uppercaseFirst(table) + `Obj {
-	var ` + strings.ToLower(table) + ` ` + uppercaseFirst(table) + `Obj
+	var object ` + uppercaseFirst(table) + `Obj
 
 	con := connection.GetConnection()
-	err := con.QueryRow("SELECT * FROM ` + table + ` WHERE ` + primaryKey + ` = ?", strconv.Itoa(id)).Scan(&` + strings.ToLower(table) + "." + uppercaseFirst(objects[0].Name) + string2 + `)
+	con.QueryRow("SELECT * FROM ` + table + ` WHERE ` + primaryKey + ` = ?", id).Scan(&object.` + uppercaseFirst(objects[0].Name) + string2 + `)
 
-	switch {
-	case err == sql.ErrNoRows:
-		println("No result for ` + primaryKey + `: " + strconv.Itoa(id))
-	case err != nil:
-		panic(errors.New("ERROR ` + uppercaseFirst(table) + `::ReadById - " + err.Error()))
-	default:
-		return ` + strings.ToLower(table) + `
-	}
-
-	return ` + strings.ToLower(table) + `
+	return object
 }`
 
 	//create foreign key methods
@@ -399,10 +390,10 @@ func ReadById(id int) ` + uppercaseFirst(table) + `Obj {
 			string += `
 
 func (Object ` + uppercaseFirst(table) + `Obj) Get` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `() ` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `Obj {
-	var ` + strings.ToLower(foreignKeys[i].ReferencedTable.String) + ` ` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `Obj
+	var object ` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `Obj
 
 	con := connection.GetConnection()
-	err := con.QueryRow("SELECT ` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `.* FROM ` + foreignKeys[i].ReferencedTable.String + ` INNER JOIN ` + foreignKeys[i].TableName + ` ON ` + foreignKeys[i].ReferencedTable.String + `.` + foreignKeys[i].ReferencedColumn.String + ` = ` + foreignKeys[i].TableName + "." + foreignKeys[i].ColumnName + ` WHERE ` + foreignKeys[i].TableName + "." + foreignKeys[i].ColumnName + ` = ?", Object.` + uppercaseFirst(foreignKeys[i].ColumnName) + `).Scan(&` + strings.ToLower(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(objects2[0].Name)
+	con.QueryRow("SELECT ` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `.* FROM ` + foreignKeys[i].ReferencedTable.String + ` INNER JOIN ` + foreignKeys[i].TableName + ` ON ` + foreignKeys[i].ReferencedTable.String + `.` + foreignKeys[i].ReferencedColumn.String + ` = ` + foreignKeys[i].TableName + "." + foreignKeys[i].ColumnName + ` WHERE ` + foreignKeys[i].TableName + "." + foreignKeys[i].ColumnName + ` = ?", Object.` + uppercaseFirst(foreignKeys[i].ColumnName) + `).Scan(&object.` + uppercaseFirst(objects2[0].Name)
 
 			for o := 1; o < len(objects2); o++ {
 				object2 := objects2[o]
@@ -410,21 +401,12 @@ func (Object ` + uppercaseFirst(table) + `Obj) Get` + uppercaseFirst(foreignKeys
 				if object2.Key == "PRI" {
 					primaryKey = object2.Name
 				}
-				string += ", &" + strings.ToLower(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(object2.Name)
+				string += ", &object." + uppercaseFirst(object2.Name)
 			}
 
 			string += `)
 
-	switch {
-	case err == sql.ErrNoRows:
-		println("No result")
-	case err != nil:
-		panic(errors.New("ERROR Realtor::Get` + uppercaseFirst(foreignKeys[i].TableName) + ` - " + err.Error()))
-	default:
-		return ` + strings.ToLower(foreignKeys[i].ReferencedTable.String) + `
-	}
-
-	return ` + strings.ToLower(foreignKeys[i].ReferencedTable.String) + `
+	return object
 }`
 		}
 	}
