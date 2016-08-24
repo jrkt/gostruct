@@ -226,8 +226,7 @@ func buildCruxFile(objects []TableObj, table string, database string) error {
 	importString := `
 
 import (
-	"database/sql"
-	"log"`
+	"database/sql"`
 
 	string := "\n\ntype " + uppercaseFirst(table) + "Obj struct {"
 	string2 := ""
@@ -370,7 +369,7 @@ func ReadById(id string) ` + uppercaseFirst(table) + `Obj {
 
 	switch {
 	case err == sql.ErrNoRows:
-		log.Println("` + table + `: No result for ` + primaryKey + ` = " + id)
+		//do something?
 	case err != nil:
 		panic(err)
 	}
@@ -405,7 +404,8 @@ func ReadById(id string) ` + uppercaseFirst(table) + `Obj {
 					continue
 				}
 
-				importString += "\n\t\"models/" + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "\""
+				importString += `
+					"models/` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `"`
 
 				string += `
 
@@ -430,7 +430,7 @@ func (Object ` + uppercaseFirst(table) + `Obj) Get` + uppercaseFirst(foreignKeys
 
 	switch {
 	case err == sql.ErrNoRows:
-		log.Println("` + foreignKeys[i].ReferencedTable.String + `: No result for ` + foreignKeys[i].ReferencedColumn.String + ` = " + Object.` + uppercaseFirst(foreignKeys[i].ColumnName) + `)
+		//do something?
 	case err != nil:
 		panic(err)
 	}
