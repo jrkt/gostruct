@@ -7,7 +7,6 @@ import (
 	"errors"
 	"os"
 	"os/exec"
-	"utils/inarray"
 )
 
 type TableObj struct {
@@ -90,7 +89,7 @@ func Run(table string, database string, host string, port string) error {
 }
 
 func handleTable(table string, database string, host string, port string) error {
-	if inarray.InStringArray(table, tablesDone) {
+	if inStringArray(table, tablesDone) {
 		return nil
 	} else {
 		tablesDone = append(tablesDone, table)
@@ -152,7 +151,7 @@ func handleTable(table string, database string, host string, port string) error 
 		} else {
 			for rows2.Next() {
 				rows2.Scan(&key.TableName, &key.ColumnName, &key.ReferencedTable, &key.ReferencedColumn)
-				if key.ColumnName != primaryKey && inarray.InStringArray(key.ColumnName, columns) && key.ReferencedTable.String != "" && key.TableName != key.ReferencedTable.String {
+				if key.ColumnName != primaryKey && inStringArray(key.ColumnName, columns) && key.ReferencedTable.String != "" && key.TableName != key.ReferencedTable.String {
 					foreignKeys = append(foreignKeys, key)
 					tables = append(tables, key.ReferencedTable.String)
 				}
@@ -227,7 +226,8 @@ func buildCruxFile(objects []TableObj, table string, database string) error {
 	importString := `
 
 import (
-	"database/sql"`
+	"database/sql"
+	"log"`
 
 	string := "\n\ntype " + uppercaseFirst(table) + "Obj struct {"
 	string2 := ""
@@ -366,7 +366,14 @@ func ReadById(id string) ` + uppercaseFirst(table) + `Obj {
 	var object ` + uppercaseFirst(table) + `Obj
 
 	con := db.GetConnection()
-	con.QueryRow("SELECT * FROM ` + table + ` WHERE ` + primaryKey + ` = ?", id).Scan(&object.` + uppercaseFirst(objects[0].Name) + string2 + `)
+	err := con.QueryRow("SELECT * FROM ` + table + ` WHERE ` + primaryKey + ` = ?", id).Scan(&object.` + uppercaseFirst(objects[0].Name) + string2 + `)
+
+	switch {
+	case err == sql.ErrNoRows:
+		log.Println("` + table + `: No result for ` + primaryKey + ` = " + id)
+	case err != nil:
+		panic(err)
+	}
 
 	return object
 }`
@@ -406,7 +413,7 @@ func (Object ` + uppercaseFirst(table) + `Obj) Get` + uppercaseFirst(foreignKeys
 	var object ` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `Obj
 
 	con := db.GetConnection()
-	con.QueryRow("SELECT ` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `.* FROM ` + foreignKeys[i].ReferencedTable.String + ` INNER JOIN ` + foreignKeys[i].TableName + ` ON ` + foreignKeys[i].ReferencedTable.String + `.` + foreignKeys[i].ReferencedColumn.String + ` = ` + foreignKeys[i].TableName + "." + foreignKeys[i].ColumnName + ` WHERE ` + foreignKeys[i].TableName + "." + foreignKeys[i].ColumnName + ` = ?", Object.` + uppercaseFirst(foreignKeys[i].ColumnName) + `).Scan(&object.` + uppercaseFirst(objects2[0].Name)
+	err := con.QueryRow("SELECT ` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `.* FROM ` + foreignKeys[i].ReferencedTable.String + ` INNER JOIN ` + foreignKeys[i].TableName + ` ON ` + foreignKeys[i].ReferencedTable.String + `.` + foreignKeys[i].ReferencedColumn.String + ` = ` + foreignKeys[i].TableName + "." + foreignKeys[i].ColumnName + ` WHERE ` + foreignKeys[i].TableName + "." + foreignKeys[i].ColumnName + ` = ?", Object.` + uppercaseFirst(foreignKeys[i].ColumnName) + `).Scan(&object.` + uppercaseFirst(objects2[0].Name)
 
 				for o := 0; o < len(objects2); o++ {
 					object2 := objects2[o]
@@ -420,6 +427,13 @@ func (Object ` + uppercaseFirst(table) + `Obj) Get` + uppercaseFirst(foreignKeys
 				}
 
 				string += `)
+
+	switch {
+	case err == sql.ErrNoRows:
+		log.Println("` + foreignKeys[i].ReferencedTable.String + `: No result for ` + foreignKeys[i].ReferencedColumn.String + ` = " + Object.` + uppercaseFirst(foreignKeys[i].ColumnName) + `)
+	case err != nil:
+		panic(err)
+	}
 
 	return object
 }`
@@ -510,4 +524,13 @@ func buildTestFile(table string) error {
 	cmd.Run()
 
 	return nil
+}
+
+func inStringArray(str string, list []string) bool {
+	for _, v := range list {
+		if v == str {
+			return true
+		}
+	}
+	return false
 }
