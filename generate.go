@@ -439,6 +439,46 @@ func (Object ` + uppercaseFirst(table) + `Obj) Get` + uppercaseFirst(foreignKeys
 }`
 			}
 		}
+
+		string += `
+
+func ReadByQuery(query string) []` + uppercaseFirst(table) + `Obj {
+	connection := db.GetConnection()
+	var objects []` + uppercaseFirst(table) + `Obj
+	rows, err := connection.Query(query)
+	if err != nil {
+		panic(err)
+	} else {
+		for rows.Next() {
+			var object ` + uppercaseFirst(table) + `Obj
+			rows.Scan(&object.` + uppercaseFirst(objects[0].Name) + string2 + `)
+			objects = append(objects, object)
+		}
+		err = rows.Err()
+		if err != nil {
+			panic(err)
+		}
+		rows.Close()
+	}
+
+	return objects
+}
+
+func ReadOneByQuery(query string) ` + uppercaseFirst(table) + `Obj {
+	var object ` + uppercaseFirst(table) + `Obj
+
+	con := db.GetConnection()
+	err := con.QueryRow(query).Scan(&object.` + uppercaseFirst(objects[0].Name) + string2 + `)
+
+	switch {
+	case err == sql.ErrNoRows:
+	//do something?
+	case err != nil:
+		panic(err)
+	}
+
+	return object
+}`
 	}
 	importString += "\n)"
 	contents = initialString + importString + string
