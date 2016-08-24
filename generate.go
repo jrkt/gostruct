@@ -439,8 +439,9 @@ func (Object ` + uppercaseFirst(table) + `Obj) Get` + uppercaseFirst(foreignKeys
 }`
 			}
 		}
+	}
 
-		string += `
+	string += `
 
 func ReadByQuery(query string) []` + uppercaseFirst(table) + `Obj {
 	connection := db.GetConnection()
@@ -479,7 +480,7 @@ func ReadOneByQuery(query string) ` + uppercaseFirst(table) + `Obj {
 
 	return object
 }`
-	}
+
 	importString += "\n)"
 	contents = initialString + importString + string
 
