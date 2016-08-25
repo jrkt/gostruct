@@ -191,3 +191,41 @@ all
     
     	return user
     }
+    
+    func ReadByQuery(query string) []UserObj {
+    	connection := db.GetConnection()
+    	var objects []UserObj
+    	rows, err := connection.Query(query)
+    	if err != nil {
+    		panic(err)
+    	} else {
+    		for rows.Next() {
+    			var user UserObj
+    			rows.Scan(&user.Id, &user.Fname, &user.Lname, &user.Phone, &user.Cell, &user.Fax, &user.Email)
+    			objects = append(objects, user)
+    		}
+    		err = rows.Err()
+    		if err != nil {
+    			panic(err)
+    		}
+    		rows.Close()
+    	}
+    
+    	return objects
+    }
+    
+    func ReadOneByQuery(query string) UserObj {
+    	var object UserObj
+    
+    	con := db.GetConnection()
+    	err := con.QueryRow(query).Scan(&user.Id, &user.Fname, &user.Lname, &user.Phone, &user.Cell, &user.Fax, &user.Email)
+    
+    	switch {
+    	case err == sql.ErrNoRows:
+    	//do something?
+    	case err != nil:
+    		panic(err)
+    	}
+    
+    	return object
+    }
