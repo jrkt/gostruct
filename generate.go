@@ -362,19 +362,7 @@ func (Object ` + uppercaseFirst(table) + `Obj) Delete() {
 		string += `
 
 func ReadById(id string) ` + uppercaseFirst(table) + `Obj {
-	var object ` + uppercaseFirst(table) + `Obj
-
-	con := db.GetConnection()
-	err := con.QueryRow("SELECT * FROM ` + table + ` WHERE ` + primaryKey + ` = ?", id).Scan(&object.` + uppercaseFirst(objects[0].Name) + string2 + `)
-
-	switch {
-	case err == sql.ErrNoRows:
-		//do something?
-	case err != nil:
-		panic(err)
-	}
-
-	return object
+	return ReadOneByQuery("SELECT * FROM ` + table + ` WHERE ` + primaryKey + ` = " + id)
 }`
 
 		//create foreign key methods
