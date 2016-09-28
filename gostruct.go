@@ -12,6 +12,7 @@ type Table struct {
 	Name string
 }
 
+//Generate table model for mysql
 func Generate() error {
 	var err error
 
