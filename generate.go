@@ -228,11 +228,11 @@ func buildCruxFile(objects []TableObj, table string, database string) error {
 import (
 	"database/sql"`
 
-	string := "\n\ntype " + uppercaseFirst(table) + "Obj struct {"
+	string1 := "\n\ntype " + utils.UppercaseFirst(table) + "Obj struct {"
 	string2 := ""
 	contents := ""
+	primaryKeys := []string{}
 
-	cntPK := 0
 	Loop:
 	for i := 0; i < len(objects); i++ {
 		object := objects[i]
@@ -243,10 +243,7 @@ import (
 		}
 		usedColumns = append(usedColumns, UsedColumn{Name: object.Name})
 		if object.Key == "PRI" {
-			cntPK++
-			if cntPK == 1 {
-				primaryKey = object.Name
-			}
+			primaryKeys = append(primaryKeys, object.Name)
 		}
 
 		dataType := ""
@@ -255,101 +252,162 @@ import (
 		} else {
 			dataType = "sql.NullString"
 		}
-		if cntPK > 1 && object.Key == "PRI" {
-			string2 += ""
-		} else if i > 0 {
-			string2 += ", &object." + uppercaseFirst(object.Name)
+		if i > 0 {
+			string2 += ", &object." + utils.UppercaseFirst(object.Name)
 		}
-		string += "\n\t" + uppercaseFirst(object.Name) + "\t\t" + dataType + "\t\t`column:\"" + object.Name + "\"`"
+		string1 += "\n\t" + utils.UppercaseFirst(object.Name) + "\t\t" + dataType + "\t\t`column:\"" + object.Name + "\"`"
 	}
-	string += "\n}"
+	string1 += "\n}"
 
-	if cntPK == 1 {
-		importString += `
-			"reflect"
-			"db/` + database + `"`
-		string += "\n\nvar primaryKey = \"" + primaryKey + "\"\n"
+	importString += `
+			"reflect"`
 
-		string += `
-func Create() *` + uppercaseFirst(table) + `Obj {
-	return &` + uppercaseFirst(table) + `Obj{}
+	if len(primaryKeys) > 0 {
+		string1 += `
+
+func Create() *` + utils.UppercaseFirst(table) + `Obj {
+	return &` + utils.UppercaseFirst(table) + `Obj{}
 }
 
-func (Object ` + uppercaseFirst(table) + `Obj) Save() {
+func (Object ` + utils.UppercaseFirst(table) + `Obj) Save() {
 	v := reflect.ValueOf(&Object).Elem()
-	objType := v.Type()
+	objType := v.Type()`
+
+		if len(primaryKeys) == 1 {
+			string1 += `
 
 	var firstValue string
 	if v.Field(0).Type() == reflect.TypeOf(sql.NullString{}) {
 		if reflect.Value(v.Field(0)).Field(0).String() == "" {
 			firstValue = "null"
 		} else {
-			firstValue = "'" + reflect.Value(v.Field(1)).Field(0).String() + "'"
+			firstValue = reflect.Value(v.Field(1)).Field(0).String()
 		}
 	} else {
 		if reflect.Value(v.Field(0)).String() == "" {
 			firstValue = "null"
 		} else {
-			firstValue = "'" + reflect.Value(v.Field(1)).String() + "'"
+			firstValue = reflect.Value(v.Field(1)).String()
 		}
-	}
+	}`
+		}
 
-	var values string
-	var columns string
+		string1 += `
+
+	values := ""
+	columns := ""`
+
+		if len(primaryKeys) > 1 {
+			string1 += `
+
+	query := "INSERT INTO ` + table + `"`
+		} else {
+			string1 += `
+
 	var query string
 
-	if Object.` + uppercaseFirst(primaryKey) + ` == "" {
+	if Object.` + utils.UppercaseFirst(primaryKeys[0]) + ` == "" {
 		query = "INSERT INTO ` + table + ` "
-		columns += "("
 		if firstValue != "null" {
-			columns += string(objType.Field(1).Tag.Get("column")) + ","
-			values += firstValue + ","
+			columns += string(objType.Field(1).Tag.Get("column"))
+			values += firstValue
 		}
 	} else {
-		query = "UPDATE ` + table + ` SET " + string(objType.Field(1).Tag.Get("column")) + " = " + firstValue
-	}
+		query = "UPDATE ` + table + ` SET "
+	}`
+		}
+		if len(primaryKeys) == 1 {
+			string1 += `
 
-	for i := 1; i < v.NumField(); i++ {
+	for i := 1; i < v.NumField(); i++ {`
+		} else {
+			string1 += `
+
+	for i := 0; i < v.NumField(); i++ {`
+		}
+		string1 += `
 		propType := v.Field(i).Type()
 		value := ""
 		if propType == reflect.TypeOf(sql.NullString{}) {
 			if reflect.Value(v.Field(i)).Field(0).String() == "" {
 				value = "null"
 			} else {
-				value = "'" + reflect.Value(v.Field(i)).Field(0).String() + "'"
-			}
+			`
+		bs := `\"`
+		string1 += `value = "\"" + strings.Replace(reflect.Value(v.Field(i)).Field(0).String(), ` + "`\"`, " + "`" + bs + "`, -1) + " + `"\""`
+
+	string1 += `}
 		} else {
 			if reflect.Value(v.Field(i)).String() == "" {
 				value = "null"
 			} else {
-				value = "'" + reflect.Value(v.Field(i)).String() + "'"
+			`
+		string1 += `value = "\"" + strings.Replace(reflect.Value(v.Field(i)).String(), ` + "`\"`, " + "`" + bs + "`, -1) + " + `"\""`
+		string1 += `
 			}
-		}
+		}`
 
-		if Object.` + uppercaseFirst(primaryKey) + ` == "" {
+		if len(primaryKeys) == 1 {
+			string1 += `
+
+		if Object.` + utils.UppercaseFirst(primaryKeys[0]) + ` == "" {
 			if value != "null" {
-				columns += string(objType.Field(i).Tag.Get("column")) + ","
-				values += value + ","
+				if i > 1 {
+					columns += ","
+					values += ","
+				}
+				columns += string(objType.Field(i).Tag.Get("column"))
+				values += value
 			}
 		} else {
-			query += ", " + string(objType.Field(i).Tag.Get("column")) + " = " + value
+			if i > 1 {
+				query += ", "
+			}
+			query += string(objType.Field(i).Tag.Get("column")) + " = " + value
 		}
-	}
-	if Object.` + uppercaseFirst(primaryKey) + ` == "" {
-		query += columns[:len(columns) - 1] + ") VALUES (" + values[:len(values) - 1] + ")"
+	}`
+		} else {
+			string1 += `
+
+		if i > 0 {
+			columns += ", "
+			values += ", "
+		}
+		`
+			string1 += "columns += \"`\" + string(objType.Field(i).Tag.Get(\"column\")) + \"`\""
+			string1 += `
+		values += value
+	}`
+		}
+
+		whereStr, whereStr2 := "", ""
+		for k := range primaryKeys {
+			if k > 0 {
+				whereStr += " AND"
+				whereStr2 += ","
+			}
+			if k == len(primaryKeys) - 1 {
+				whereStr += ` ` + primaryKeys[k] + ` = \"" + Object.` + utils.UppercaseFirst(primaryKeys[k]) + ` + "\""`
+				whereStr2 += ` ` + primaryKeys[k] + ` = \"" + Object.` + utils.UppercaseFirst(primaryKeys[k]) + ` + "\""`
+			} else {
+				whereStr += ` ` + primaryKeys[k] + ` = \"" + Object.` + utils.UppercaseFirst(primaryKeys[k]) + ` + "\"`
+				whereStr2 += ` ` + primaryKeys[k] + ` = \"" + Object.` + utils.UppercaseFirst(primaryKeys[k]) + ` + "\"`
+			}
+		}
+
+		if len(primaryKeys) == 1 {
+			string1 += `
+	if Object.` + utils.UppercaseFirst(primaryKeys[0]) + ` == "" {
+		query += "(" + columns + ") VALUES (" + values + ")"
 	} else {
-		query += " WHERE " + primaryKey + " = '" + Object.` + uppercaseFirst(primaryKey) + ` + "'"
-	}
+		query += " WHERE` + whereStr + `
+	}`
+		} else {
+			string1 += `
+	query += " (" + columns + ") VALUES(" + values + ") ON DUPLICATE KEY UPDATE`  + whereStr2
+		}
 
-	con := db.GetConnection()
-	_, err := con.Exec(query)
-	if err != nil {
-		panic(err.Error())
-	}
-}
-
-func (Object ` + uppercaseFirst(table) + `Obj) Delete() {
-	query := "DELETE FROM ` + table + ` WHERE ` + primaryKey + ` = '" + Object.` + uppercaseFirst(primaryKey) + ` + "'"
+		string1 += `
 
 	con := db.GetConnection()
 	_, err := con.Exec(query)
@@ -357,90 +415,70 @@ func (Object ` + uppercaseFirst(table) + `Obj) Delete() {
 		panic(err.Error())
 	}
 }`
+
+		string1 += `
+
+func (Object ` + utils.UppercaseFirst(table) + `Obj) Delete() {
+	query := "DELETE FROM ` + table + ` WHERE` + whereStr + `
+
+	con := db.GetConnection()
+	_, err := con.Exec(query)
+	if err != nil {
+		panic(err.Error())
+	}
+}`
+
+		paramStr, whereStr := "", ""
+		for k := range primaryKeys {
+			var param string
+			if primaryKeys[k] == "type" {
+				param = "objType"
+			} else if primaryKeys[k] == "typeId" {
+				param = "objTypeId"
+			} else {
+				param = primaryKeys[k]
+			}
+			paramStr += param + " string"
+			if k > 0 {
+				whereStr += " AND"
+			}
+			if k == len(primaryKeys) - 1 {
+				whereStr += ` ` + param + ` = '" + ` + param + ` + "'"`
+			} else {
+				paramStr += ", "
+				whereStr += ` ` + param + ` = '" + ` + param + ` + "'`
+			}
+		}
 
 		//create ReadById method
-		string += `
-
-func ReadById(id string) ` + uppercaseFirst(table) + `Obj {
-	return ReadOneByQuery("SELECT * FROM ` + table + ` WHERE ` + primaryKey + ` = " + id)
+		string1 += `
+func ReadById(` + paramStr + `) ` + utils.UppercaseFirst(table) + `Obj {
+	return ReadOneByQuery("SELECT * FROM ` + table + ` WHERE` + whereStr + `)
 }`
-
-		//create foreign key methods
-		for i := 0; i < len(foreignKeys); i++ {
-			if foreignKeys[i].ReferencedTable.String == "DatabaseEnum" {
-				continue
-			}
-			rows3, err := con.Query("SELECT column_name, is_nullable, column_key FROM information_schema.columns WHERE table_name = ? AND table_schema = ?", foreignKeys[i].ReferencedTable.String, database)
-			defer rows3.Close()
-
-			var object TableObj
-			var objects2 []TableObj = make([]TableObj, 0)
-
-			if err != nil {
-				log.Fatalln(err.Error())
-			} else {
-				for rows3.Next() {
-					rows3.Scan(&object.Name, &object.IsNullable, &object.Key)
-					objects2 = append(objects2, object)
-				}
-			}
-
-			if len(objects2) == 0 {
-				log.Fatalln(errors.New("No results for table: " + foreignKeys[i].ReferencedTable.String))
-			} else {
-				if uppercaseFirst(foreignKeys[i].ReferencedTable.String) == table {
-					continue
-				}
-
-				importString += `
-					"models/` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `"`
-
-				string += `
-
-func (Object ` + uppercaseFirst(table) + `Obj) Get` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `() ` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `Obj {
-	var object ` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + "." + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `Obj
-
-	con := db.GetConnection()
-	err := con.QueryRow("SELECT ` + uppercaseFirst(foreignKeys[i].ReferencedTable.String) + `.* FROM ` + foreignKeys[i].ReferencedTable.String + ` INNER JOIN ` + foreignKeys[i].TableName + ` ON ` + foreignKeys[i].ReferencedTable.String + `.` + foreignKeys[i].ReferencedColumn.String + ` = ` + foreignKeys[i].TableName + "." + foreignKeys[i].ColumnName + ` WHERE ` + foreignKeys[i].TableName + "." + foreignKeys[i].ColumnName + ` = ?", Object.` + uppercaseFirst(foreignKeys[i].ColumnName) + `).Scan(&object.` + uppercaseFirst(objects2[0].Name)
-
-				for o := 0; o < len(objects2); o++ {
-					object2 := objects2[o]
-
-					if object2.Key == "PRI" {
-						primaryKey = object2.Name
-					}
-					if o > 0 {
-						string += ", &object." + uppercaseFirst(object2.Name)
-					}
-				}
-
-				string += `)
-
-	switch {
-	case err == sql.ErrNoRows:
-		//do something?
-	case err != nil:
-		panic(err)
 	}
 
-	return object
+	string1 += `
+
+func ReadAll(order string) []` + utils.UppercaseFirst(table) + `Obj {
+	return ReadByQuery("SELECT * FROM ` + table + `", order)
 }`
-			}
-		}
-	}
 
-	string += `
+	string1 += `
 
-func ReadByQuery(query string) []` + uppercaseFirst(table) + `Obj {
+func ReadByQuery(query string, order string) []` + utils.UppercaseFirst(table) + `Obj {
 	connection := db.GetConnection()
-	var objects []` + uppercaseFirst(table) + `Obj
+	var objects []` + utils.UppercaseFirst(table) + `Obj
+	if order != "" {
+		query += " ORDER BY " + order
+	}
+	query = strings.Replace(query, "'", "\"", -1)
 	rows, err := connection.Query(query)
 	if err != nil {
 		panic(err)
 	} else {
 		for rows.Next() {
-			var object ` + uppercaseFirst(table) + `Obj
-			rows.Scan(&object.` + uppercaseFirst(objects[0].Name) + string2 + `)
+			var object ` + utils.UppercaseFirst(table) + `Obj
+			rows.Scan(&object.` + utils.UppercaseFirst(objects[0].Name) + string2 + `)
 			objects = append(objects, object)
 		}
 		err = rows.Err()
@@ -453,11 +491,12 @@ func ReadByQuery(query string) []` + uppercaseFirst(table) + `Obj {
 	return objects
 }
 
-func ReadOneByQuery(query string) ` + uppercaseFirst(table) + `Obj {
-	var object ` + uppercaseFirst(table) + `Obj
+func ReadOneByQuery(query string) ` + utils.UppercaseFirst(table) + `Obj {
+	var object ` + utils.UppercaseFirst(table) + `Obj
 
 	con := db.GetConnection()
-	err := con.QueryRow(query).Scan(&object.` + uppercaseFirst(objects[0].Name) + string2 + `)
+	query = strings.Replace(query, "'", "\"", -1)
+	err := con.QueryRow(query).Scan(&object.` + utils.UppercaseFirst(objects[0].Name) + string2 + `)
 
 	switch {
 	case err == sql.ErrNoRows:
@@ -470,7 +509,7 @@ func ReadOneByQuery(query string) ` + uppercaseFirst(table) + `Obj {
 }`
 
 	importString += "\n)"
-	contents = initialString + importString + string
+	contents = initialString + importString + string1
 
 	cruxFilePath := dir + tableNaming + "_Crux.go"
 	if exists(cruxFilePath) {
