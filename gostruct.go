@@ -2,7 +2,8 @@ package gostruct
 
 import (
 	"flag"
-	"db/circlepix"
+	"connection"
+	"errors"
 )
 
 const DB_USERNAME = "{username}";
@@ -24,7 +25,7 @@ func Generate() error {
 	flag.Parse()
 
 	if *all == "true" {
-		connection := db.GetConnection()
+		connection := connection.Get()
 		rows, err := connection.Query("SELECT DISTINCT(TABLE_NAME) FROM `information_schema`.`COLUMNS` WHERE `TABLE_SCHEMA` LIKE ?", database)
 		if err != nil {
 			panic(err)
