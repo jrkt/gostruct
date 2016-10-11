@@ -129,6 +129,7 @@ type UserObj struct {
     Income     float64   `column:"income"`
     IsActive   bool      `column:"isActive"`
     SignupDate time.Time `column:"signupDate"`
+    TerminationDate date.NullTime `column:"terminationDate"`
 }
 
 func (Object UserObj) Save() error {
