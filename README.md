@@ -2,7 +2,7 @@
 This is a library to auto-generate models with packages, structs, and basic methods of accessibility for a given MySQL database table and all other tables related through all foreign key relationships. 
 
 # usage
-
+    go get github.com/go-sql-driver/mysql
     go get github.com/jonathankentstevens/gostruct
 
 Replace the {username} and {password} constants in gostruct.go to the credentials of your database. Then create a generate.go file with the following contents:
