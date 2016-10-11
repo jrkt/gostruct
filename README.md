@@ -74,6 +74,37 @@ all
     	user.Delete()
     }
     
+# DAO_User.go - sample method to include
+
+    func ReadAllActive(order string) []UserObj {
+        return ReadByQuery("SELECT * FROM User WHERE IsActive = '1'", order)
+    }
+    
+How to call:
+
+    func main() {
+        users := User.ReadAllActive("Name ASC")
+        fmt.Println(users)
+    }
+
+# BO_User.go - sample method to include
+
+    func (user UserObj) Terminate() {
+        user.IsActive = false
+        user.TerminationDate = time.Now()
+        user.Save()
+    }
+
+How to call:
+
+    func main() {
+        users := User.ReadAllActive("Name ASC")
+        for i := range users {
+            user := users[i]
+            user.Terminate()
+        }
+    }
+    
 # CRUX_User.go - sample file
 
     package User
@@ -261,35 +292,4 @@ all
         }
 
         return object
-    }
-
-# DAO_User.go - sample method to include
-
-    func ReadAllActive(order string) []UserObj {
-        return ReadByQuery("SELECT * FROM User WHERE IsActive = '1'", order)
-    }
-    
-How to call:
-
-    func main() {
-        users := User.ReadAllActive("Name ASC")
-        fmt.Println(users)
-    }
-
-# BO_User.go - sample method to include
-
-    func (user UserObj) Terminate() {
-        user.IsActive = false
-        user.TerminationDate = time.Now()
-        user.Save()
-    }
-
-How to call:
-
-    func main() {
-        users := User.ReadAllActive("Name ASC")
-        for i := range users {
-            user := users[i]
-            user.Terminate()
-        }
     }
