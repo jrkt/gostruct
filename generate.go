@@ -29,9 +29,6 @@ type UsedColumn struct {
 
 var err error
 var con *sql.DB
-var tablesDone []string
-var GOPATH string
-var primaryKey string
 var tables []string
 var tablesDone []string
 var primaryKey string
@@ -234,6 +231,7 @@ import (
 	"strings"
 	"date"
 	"connection"
+	"logger"
 	"reflect"
 	"strconv"
 	"time"`
@@ -343,7 +341,7 @@ import (
 	if len(primaryKeys) > 0 {
 		string1 += `
 
-func (Object ` + uppercaseFirst(table) + `Obj) Save() error {
+func (Object ` + uppercaseFirst(table) + `Obj) Save() {
 	v := reflect.ValueOf(&Object).Elem()
 	objType := v.Type()`
 
@@ -489,10 +487,8 @@ func (Object ` + uppercaseFirst(table) + `Obj) Save() error {
 	con := connection.Get()
 	_, err := con.Exec(query)
 	if err != nil {
-		return err
+		logger.HandleError(logger.Exception{Msg: err.Error(), File: "models/` + uppercaseFirst(table) + `/CRUX_` + uppercaseFirst(table) + `.go", Line: 72})
 	}
-
-	return nil
 }
 
 func getFieldValue(field reflect.Value) string {
@@ -546,16 +542,14 @@ func getFieldValue(field reflect.Value) string {
 
 		string1 += `
 
-func (Object ` + uppercaseFirst(table) + `Obj) Delete() error {
+func (Object ` + uppercaseFirst(table) + `Obj) Delete() {
 	query := "DELETE FROM ` + table + ` WHERE` + whereStr + `
 
 	con := connection.Get()
 	_, err := con.Exec(query)
 	if err != nil {
-		return err
+		logger.HandleError(logger.Exception{Msg: err.Error(), File: "models/` + uppercaseFirst(table) + `/CRUX_` + uppercaseFirst(table) + `.go", Line: 131})
 	}
-
-	return nil
 }
 `
 		paramStr, whereStr := "", ""
@@ -619,7 +613,7 @@ func ReadByQuery(query string, order string) []` + uppercaseFirst(table) + `Obj 
 	query = strings.Replace(query, "'", "\"", -1)
 	rows, err := connection.Query(query)
 	if err != nil {
-		panic(err)
+		logger.HandleError(logger.Exception{Msg: err.Error(), File: "models/` + uppercaseFirst(table) + `/CRUX_` + uppercaseFirst(table) + `.go", Line: 152})
 	} else {
 		for rows.Next() {
 			var object ` + uppercaseFirst(table) + `Obj
@@ -628,7 +622,7 @@ func ReadByQuery(query string, order string) []` + uppercaseFirst(table) + `Obj 
 		}
 		err = rows.Err()
 		if err != nil {
-			panic(err)
+			logger.HandleError(logger.Exception{Msg: err.Error(), File: "models/` + uppercaseFirst(table) + `/CRUX_` + uppercaseFirst(table) + `.go", Line: 161})
 		}
 		rows.Close()
 	}
@@ -642,12 +636,8 @@ func ReadOneByQuery(query string) ` + uppercaseFirst(table) + `Obj {
 	con := connection.Get()
 	query = strings.Replace(query, "'", "\"", -1)
 	err := con.QueryRow(query).Scan(&object.` + uppercaseFirst(objects[0].Name) + string2 + `)
-
-	switch {
-	case err == sql.ErrNoRows:
-	//do something?
-	case err != nil:
-		panic(err)
+	if err != nil {
+		logger.HandleError(logger.Exception{Msg: err.Error(), File: "models/` + uppercaseFirst(table) + `/CRUX_` + uppercaseFirst(table) + `.go", Line: 176})
 	}
 
 	return object
@@ -662,7 +652,7 @@ func ReadOneByQuery(query string) ` + uppercaseFirst(table) + `Obj {
 		return err
 	}
 
-	_, err = runCommand("go fmt " + cruxFilePath, true, false)
+	_, err = runCommand("go fmt " + cruxFilePath)
 	if err != nil {
 		return err
 	}
@@ -683,7 +673,7 @@ func buildDaoFile(table string) error {
 		}
 	}
 
-	_, err := runCommand("go fmt " + daoFilePath, true, false)
+	_, err := runCommand("go fmt " + daoFilePath)
 	if err != nil {
 		return err
 	}
@@ -704,7 +694,7 @@ func buildBoFile(table string) error {
 		}
 	}
 
-	_, err := runCommand("go fmt " + boFilePath, true, false)
+	_, err := runCommand("go fmt " + boFilePath)
 	if err != nil {
 		return err
 	}
@@ -733,7 +723,7 @@ func buildTestFile(table string) error {
 		}
 	}
 
-	_, err := runCommand("go fmt " + testFilePath, true, false)
+	_, err := runCommand("go fmt " + testFilePath)
 	if err != nil {
 		return err
 	}
@@ -752,6 +742,7 @@ func buildConnectionPackage(host string, database string) error {
 	conFilePath := GOPATH + "/src/connection/connection.go"
 	contents := `package connection
 import (
+	"logger"
 	"database/sql"
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -770,8 +761,9 @@ func Get() *sql.DB {
 
 	connection, err = sql.Open("mysql", "` + DB_USERNAME + `:` + DB_PASSWORD + `@tcp(` + host + `:3306)/` + database + `?parseTime=true")
 	if err != nil {
-		panic(err)
+		logger.HandleError(logger.Exception{Msg: err.Error(), File: "connection/connection.go", Line: 50})
 	}
+
 	return connection
 }`
 	err = writeFile(conFilePath, contents, true)
@@ -779,7 +771,7 @@ func Get() *sql.DB {
 		return err
 	}
 
-	_, err := runCommand("go fmt " + conFilePath, true, false)
+	_, err := runCommand("go fmt " + conFilePath)
 	if err != nil {
 		return err
 	}
@@ -828,7 +820,7 @@ func (nt NullTime) Value() (driver.Value, error) {
 		return err
 	}
 
-	_, err := runCommand("go fmt " + dateFilePath, true, false)
+	_, err := runCommand("go fmt " + dateFilePath)
 	if err != nil {
 		return err
 	}
@@ -847,29 +839,28 @@ func buildLoggerPackage() error {
 	contents := `package logger
 
 import (
-	"errors"
+	"fmt"
 )
 
 type Exception struct {
-	Msg string
-	File    string
-	Line    int
+	Msg  string
+	File string
+	Line int
 }
 
 func (e *Exception) Error() string {
 	return fmt.Sprintf("%s:%d: %s", e.File, e.Line, e.Msg)
 }
 
-func HandleError(e *interface{}) {
+func HandleError(e interface{}) {
 	switch e.(type) {
-	case error:
-		//do something
 	case *Exception:
 		//do something
 	default:
-		//unknown error
+		//error type
 	}
-}`
+}
+`
 
 	loggerFilePath := GOPATH + "/src/logger/logger.go"
 	err = writeFile(loggerFilePath, contents, true)
@@ -877,7 +868,7 @@ func HandleError(e *interface{}) {
 		return err
 	}
 
-	_, err := runCommand("go fmt " + loggerFilePath, true, false)
+	_, err := runCommand("go fmt " + loggerFilePath)
 	if err != nil {
 		return err
 	}

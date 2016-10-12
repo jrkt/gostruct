@@ -4,7 +4,6 @@ import (
 	"os"
 	"strings"
 	"bytes"
-	"log"
 	"os/exec"
 	"unicode"
 )
@@ -62,28 +61,12 @@ func writeFile(path string, contents string, overwrite bool) error {
 /*
  Run commands as if from the command line
  */
-func runCommand(command string, showOutput bool, returnOutput bool) (string, error) {
-	if showOutput {
-		log.Println("Running command: " + command)
-	}
-
+func runCommand(command string) (string, error) {
 	parts := getCmdParts(command)
-	if returnOutput {
-		data, err := exec.Command(parts[0], parts[1:]...).Output()
-		if err != nil {
-			return "", err
-		}
-		return string(data), nil
-	} else {
-		cmd := exec.Command(parts[0], parts[1:]...)
-		if showOutput {
-			cmd.Stderr = os.Stderr
-			cmd.Stdout = os.Stdout
-		}
-		err := cmd.Run()
-		if err != nil {
-			return "", err
-		}
+	cmd := exec.Command(parts[0], parts[1:]...)
+	err := cmd.Run()
+	if err != nil {
+		return "", err
 	}
 
 	return "", nil
