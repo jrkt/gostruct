@@ -9,6 +9,9 @@ import (
 	"unicode"
 )
 
+/*
+ Checks if path or file exists
+ */
 func exists(path string) bool {
 	if _, err := os.Stat(path); err == nil {
 		return true
@@ -17,8 +20,10 @@ func exists(path string) bool {
 	}
 }
 
+/*
+ Does exactly what it says it does
+ */
 func uppercaseFirst(s string) string {
-
 	if len(s) < 2 {
 		return strings.ToLower(s)
 	}
@@ -31,12 +36,9 @@ func uppercaseFirst(s string) string {
 	return string(bytes.Join([][]byte{lc, rest}, nil))
 }
 
-func check(e error) {
-	if e != nil {
-		log.Fatalln(e.Error())
-	}
-}
-
+/*
+ Write contents to file and overwrite
+ */
 func writeFile(path string, contents string, overwrite bool) error {
 	var err error
 	if exists(path) && overwrite {
@@ -117,6 +119,9 @@ func getCmdParts(command string) []string {
 	return parts
 }
 
+/*
+ Determines if string is in array
+ */
 func inArray(char string, strings []string) bool {
 	for _, a := range strings {
 		if a == char {
