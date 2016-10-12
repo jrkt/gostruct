@@ -487,7 +487,7 @@ func (Object ` + uppercaseFirst(table) + `Obj) Save() {
 	con := connection.Get()
 	_, err := con.Exec(query)
 	if err != nil {
-		logger.HandleError(logger.Exception{Msg: err.Error(), File: "models/` + uppercaseFirst(table) + `/CRUX_` + uppercaseFirst(table) + `.go", Line: 72})
+		logger.HandleError(logger.Exception{Msg: err.Error(), File: "models/` + uppercaseFirst(table) + `/CRUX_` + uppercaseFirst(table) + `.go", Method: "Save", Line: 0})
 	}
 }
 
@@ -548,7 +548,7 @@ func (Object ` + uppercaseFirst(table) + `Obj) Delete() {
 	con := connection.Get()
 	_, err := con.Exec(query)
 	if err != nil {
-		logger.HandleError(logger.Exception{Msg: err.Error(), File: "models/` + uppercaseFirst(table) + `/CRUX_` + uppercaseFirst(table) + `.go", Line: 131})
+		logger.HandleError(logger.Exception{Msg: err.Error(), File: "models/` + uppercaseFirst(table) + `/CRUX_` + uppercaseFirst(table) + `.go", Method: "Delete", Line: 0})
 	}
 }
 `
@@ -613,7 +613,7 @@ func ReadByQuery(query string, order string) []` + uppercaseFirst(table) + `Obj 
 	query = strings.Replace(query, "'", "\"", -1)
 	rows, err := connection.Query(query)
 	if err != nil {
-		logger.HandleError(logger.Exception{Msg: err.Error(), File: "models/` + uppercaseFirst(table) + `/CRUX_` + uppercaseFirst(table) + `.go", Line: 152})
+		logger.HandleError(logger.Exception{Msg: err.Error(), File: "models/` + uppercaseFirst(table) + `/CRUX_` + uppercaseFirst(table) + `.go", Method: "ReadByQuery", Line: 0})
 	} else {
 		for rows.Next() {
 			var object ` + uppercaseFirst(table) + `Obj
@@ -622,7 +622,7 @@ func ReadByQuery(query string, order string) []` + uppercaseFirst(table) + `Obj 
 		}
 		err = rows.Err()
 		if err != nil {
-			logger.HandleError(logger.Exception{Msg: err.Error(), File: "models/` + uppercaseFirst(table) + `/CRUX_` + uppercaseFirst(table) + `.go", Line: 161})
+			logger.HandleError(logger.Exception{Msg: err.Error(), File: "models/` + uppercaseFirst(table) + `/CRUX_` + uppercaseFirst(table) + `.go", Method: "ReadByQuery", Line: 1})
 		}
 		rows.Close()
 	}
@@ -637,7 +637,7 @@ func ReadOneByQuery(query string) ` + uppercaseFirst(table) + `Obj {
 	query = strings.Replace(query, "'", "\"", -1)
 	err := con.QueryRow(query).Scan(&object.` + uppercaseFirst(objects[0].Name) + string2 + `)
 	if err != nil {
-		logger.HandleError(logger.Exception{Msg: err.Error(), File: "models/` + uppercaseFirst(table) + `/CRUX_` + uppercaseFirst(table) + `.go", Line: 176})
+		logger.HandleError(logger.Exception{Msg: err.Error(), File: "models/` + uppercaseFirst(table) + `/CRUX_` + uppercaseFirst(table) + `.go", Method: "ReadOneByQuery", Line: 0})
 	}
 
 	return object
@@ -667,7 +667,7 @@ func buildDaoFile(table string) error {
 
 	if !exists(daoFilePath) {
 		contents := "package " + uppercaseFirst(table) + "\n\n//Methods Here"
-		err = writeFile(daoFilePath, contents, true)
+		err = writeFile(daoFilePath, contents, false)
 		if err != nil {
 			return err
 		}
@@ -688,7 +688,7 @@ func buildBoFile(table string) error {
 
 	if !exists(boFilePath) {
 		contents := "package " + uppercaseFirst(table) + "\n\n//Methods Here"
-		err = writeFile(boFilePath, contents, true)
+		err = writeFile(boFilePath, contents, false)
 		if err != nil {
 			return err
 		}
@@ -717,7 +717,7 @@ func buildTestFile(table string) error {
 		func TestSomething(t *testing.T) {
 			//test stuff here..
 		}`
-		err = writeFile(testFilePath, contents, true)
+		err = writeFile(testFilePath, contents, false)
 		if err != nil {
 			return err
 		}
@@ -766,7 +766,7 @@ func Get() *sql.DB {
 
 	return connection
 }`
-	err = writeFile(conFilePath, contents, true)
+	err = writeFile(conFilePath, contents, false)
 	if err != nil {
 		return err
 	}
@@ -815,7 +815,7 @@ func (nt NullTime) Value() (driver.Value, error) {
 	}
 	return nt.Time, nil
 }`
-	err = writeFile(dateFilePath, contents, true)
+	err = writeFile(dateFilePath, contents, false)
 	if err != nil {
 		return err
 	}
@@ -845,25 +845,28 @@ import (
 type Exception struct {
 	Msg  string
 	File string
+	Method string
 	Line int
 }
 
 func (e *Exception) Error() string {
-	return fmt.Sprintf("%s:%d: %s", e.File, e.Line, e.Msg)
+	return fmt.Sprintf("%s(%s):%d: %s", e.File, e.Method, e.Line, e.Msg)
 }
 
 func HandleError(e interface{}) {
 	switch e.(type) {
 	case *Exception:
 		//do something
+	case error:
+		//do something
 	default:
-		//error type
+		//unknown error
 	}
 }
 `
 
 	loggerFilePath := GOPATH + "/src/logger/logger.go"
-	err = writeFile(loggerFilePath, contents, true)
+	err = writeFile(loggerFilePath, contents, false)
 	if err != nil {
 		return err
 	}
