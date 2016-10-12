@@ -2,11 +2,12 @@ package gostruct
 
 import (
 	"flag"
-	"db/circlepix"
+	"connection"
+	"errors"
 )
 
-const DB_USERNAME = "{username}";
-const DB_PASSWORD = "{password}";
+const DB_USERNAME = "root";
+const DB_PASSWORD = "Jstevens120)";
 
 type Table struct {
 	Name string
@@ -24,7 +25,7 @@ func Generate() error {
 	flag.Parse()
 
 	if *all == "true" {
-		connection := db.GetConnection()
+		connection := connection.Get()
 		rows, err := connection.Query("SELECT DISTINCT(TABLE_NAME) FROM `information_schema`.`COLUMNS` WHERE `TABLE_SCHEMA` LIKE ?", database)
 		if err != nil {
 			panic(err)
