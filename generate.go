@@ -32,6 +32,10 @@ var con *sql.DB
 var tablesDone []string
 var GOPATH string
 var primaryKey string
+var tables []string
+var tablesDone []string
+var primaryKey string
+var GOPATH string
 
 func Run(table string, database string, host string, port string) error {
 	GOPATH = os.Getenv("GOPATH")
@@ -336,7 +340,6 @@ import (
 	string1 += "\n}"
 
 	bs := `\"`
-
 	if len(primaryKeys) > 0 {
 		string1 += `
 
