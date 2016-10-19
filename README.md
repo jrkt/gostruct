@@ -1,7 +1,7 @@
 # gostruct
 This is a library to auto-generate models with packages, structs, and basic methods of accessibility for a given MySQL database table.
 
-# usage
+# implementation
 
     go get github.com/go-sql-driver/mysql
     go get github.com/jonathankentstevens/gostruct
@@ -53,7 +53,7 @@ all
 
     If this option is passed in as "true", it will run for all tables based on the database
 
-# implementation
+# usage
 ```go
 package main
 
