@@ -465,3 +465,7 @@ func ExampleExec() {
 	User.Exec(fmt.Sprintf("UPDATE User SET email = 'some string' WHERE id = '%d'", 12345))
 }
 ```
+# Screenshots of godocs created from auto-generated package
+<img src="img/User_godocs_1.png">
+<img src="img/User_godocs_2.png">
+<img src="img/User_godocs_3.png">
