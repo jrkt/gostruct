@@ -1,3 +1,7 @@
+//Package gostruct is an ORM that generates a golang package based on a MySQL database table including a DAO, BO, CRUX, test, and example file
+//
+//The CRUX file provides all basic CRUD functionality to handle any objects of the table. The test file is a skeleton file
+//ready to use for unit testing. THe example file is populated with sample methods aiding in clear godocs.
 package gostruct
 
 import (
@@ -6,8 +10,11 @@ import (
 	"log"
 	"errors"
 	"os"
+	"strings"
 )
 
+//TableObj is the result set returned from the MySQL information_schema that
+//contains all data for a specific table
 type TableObj struct {
 	Name       string
 	IsNullable string
@@ -16,24 +23,27 @@ type TableObj struct {
 	ColumnType string
 }
 
-type KeyObj struct {
-	TableName        string
-	ColumnName       string
-	ReferencedTable  sql.NullString
-	ReferencedColumn sql.NullString
-}
-
 type UsedColumn struct {
 	Name string
 }
 
+type UniqueValues struct {
+	Value sql.NullString
+}
+
+//Globals variables
 var err error
 var con *sql.DB
 var tables []string
 var tablesDone []string
 var primaryKey string
 var GOPATH string
+var exampleIdStr string
+var exampleColumn string
+var exampleColumnStr string
+var exampleOrderStr string
 
+//Generates a package for a single table
 func Run(table string, database string, host string, port string) error {
 	GOPATH = os.Getenv("GOPATH")
 
@@ -73,21 +83,7 @@ func Run(table string, database string, host string, port string) error {
 	return nil
 }
 
-func CreateDirectory(path string) error {
-	err = os.Mkdir(path, 0777)
-	if err != nil {
-		return err
-	}
-
-	//give new directory full permissions
-	err = os.Chmod(path, 0777)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
+//Generates packages for all tables in a specific database and host
 func RunAll(database string, host string, port string) error {
 	var portStr string
 	if port == "" {
@@ -118,6 +114,23 @@ func RunAll(database string, host string, port string) error {
 	return nil
 }
 
+//Creates directory and sets permissions to 0777
+func CreateDirectory(path string) error {
+	err = os.Mkdir(path, 0777)
+	if err != nil {
+		return err
+	}
+
+	//give new directory full permissions
+	err = os.Chmod(path, 0777)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+//Main hanlder method for tables
 func handleTable(table string, database string, host string, port string) error {
 	if inArray(table, tablesDone) {
 		return nil
@@ -208,22 +221,33 @@ func handleTable(table string, database string, host string, port string) error 
 		if err != nil {
 			return err
 		}
+
+		//handle Example file
+		err = buildExamplesFile(table)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
-type UniqueValues struct {
-	Value sql.NullString
-}
-
+//Builds CRUX_{table}.go file with main struct and CRUD functionality
 func buildCruxFile(objects []TableObj, table string, database string) error {
+	exampleIdStr = ""
+	exampleColumn = ""
+	exampleColumnStr = ""
+	exampleOrderStr = ""
 
 	tableNaming := uppercaseFirst(table)
 	dir := GOPATH + "/src/models/" + uppercaseFirst(table) + "/"
 
 	var usedColumns []UsedColumn
-	initialString := `package ` + uppercaseFirst(table)
+	initialString := `//The ` + uppercaseFirst(table) + ` package serves as the base structure for the ` + table + ` table
+//
+//Package ` + uppercaseFirst(table) + ` contains base methods and CRUD functionality to
+//interact with the ` + table + ` table in the ` + database + ` database
+package ` + uppercaseFirst(table)
 	importString := `
 
 import (
@@ -236,7 +260,12 @@ import (
 	"strconv"
 	"time"`
 
-	string1 := "\n\ntype " + uppercaseFirst(table) + "Obj struct {"
+	string1 := `
+
+//` + uppercaseFirst(table) + `Obj is the structure of the home table
+//
+//This contains all columns that exist in the database
+type ` + uppercaseFirst(table) + "Obj struct {"
 	string2 := ""
 	contents := ""
 
@@ -313,8 +342,16 @@ import (
 			isBool = false
 			if object.IsNullable == "NO" {
 				dataType = "string"
+				if i > 1 && exampleColumn == "" {
+					exampleColumn = object.Name
+					exampleColumnStr = uppercaseFirst(object.Name) + ` = "some string"`
+				}
 			} else {
 				dataType = "sql.NullString"
+				if i > 1 && exampleColumn == "" {
+					exampleColumn = object.Name
+					exampleColumnStr = uppercaseFirst(object.Name) + `.String = "some string"`
+				}
 			}
 		}
 
@@ -326,12 +363,20 @@ import (
 					dataType = "sql.NullInt64"
 				}
 			}
+			if dataType == "string" || dataType == "sql.NullString" {
+				exampleIdStr = `"12345"`
+			} else if dataType == "int" || dataType == "sql.NullInt64" {
+				exampleIdStr = `12345`
+			}
+			if exampleOrderStr == "" {
+				exampleOrderStr = object.Name + ` DESC`
+			}
 			primaryKeys = append(primaryKeys, object.Name)
 			primaryKeyTypes = append(primaryKeyTypes, dataType)
 		}
 
 		if i > 0 {
-			string2 += ", &object." + uppercaseFirst(object.Name)
+			string2 += ", &" + strings.ToLower(table) + "." + uppercaseFirst(object.Name)
 		}
 		string1 += "\n\t" + uppercaseFirst(object.Name) + "\t\t" + dataType + "\t\t`column:\"" + object.Name + "\"`"
 	}
@@ -341,8 +386,10 @@ import (
 	if len(primaryKeys) > 0 {
 		string1 += `
 
-func (Object ` + uppercaseFirst(table) + `Obj) Save() {
-	v := reflect.ValueOf(&Object).Elem()
+//Save accepts a ` + uppercaseFirst(table) + `Obj pointer and
+//applies any updates needed to the record in the database
+func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Save() {
+	v := reflect.ValueOf(` + strings.ToLower(table) + `).Elem()
 	objType := v.Type()`
 
 		string1 += `
@@ -358,11 +405,11 @@ func (Object ` + uppercaseFirst(table) + `Obj) Save() {
 			var convertedVal string
 			switch primaryKeyTypes[0] {
 			case "int":
-				convertedVal = `strconv.Itoa(Object.` + uppercaseFirst(primaryKeys[0]) + `)`
+				convertedVal = `strconv.Itoa(` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0]) + `)`
 			case "float64":
-				convertedVal = `strconv.FormatFloat(Object.` + uppercaseFirst(primaryKeys[0]) + `, 'f', -1, 64)`
+				convertedVal = `strconv.FormatFloat(` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0]) + `, 'f', -1, 64)`
 			case "string":
-				convertedVal = `Object.` + uppercaseFirst(primaryKeys[0])
+				convertedVal = strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0])
 			}
 
 			string1 += `
@@ -396,11 +443,11 @@ func (Object ` + uppercaseFirst(table) + `Obj) Save() {
 			var convertedVal string
 			switch primaryKeyTypes[0] {
 			case "int":
-				convertedVal = `strconv.Itoa(Object.` + uppercaseFirst(primaryKeys[0]) + `)`
+				convertedVal = `strconv.Itoa(` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0]) + `)`
 			case "float64":
-				convertedVal = `strconv.FormatFloat(Object.` + uppercaseFirst(primaryKeys[0]) + `, 'f', -1, 64)`
+				convertedVal = `strconv.FormatFloat(` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0]) + `, 'f', -1, 64)`
 			case "string":
-				convertedVal = `Object.` + uppercaseFirst(primaryKeys[0])
+				convertedVal = strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0])
 			}
 
 			string1 += `
@@ -444,11 +491,11 @@ func (Object ` + uppercaseFirst(table) + `Obj) Save() {
 			var convertedVal string
 			switch primaryKeyTypes[k] {
 			case "int":
-				convertedVal = `strconv.Itoa(Object.` + uppercaseFirst(primaryKeys[k]) + `)`
+				convertedVal = `strconv.Itoa(` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[k]) + `)`
 			case "float64":
-				convertedVal = `strconv.FormatFloat(Object.` + uppercaseFirst(primaryKeys[k]) + `, 'f', -1, 64)`
+				convertedVal = `strconv.FormatFloat(` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[k]) + `, 'f', -1, 64)`
 			case "string":
-				convertedVal = `Object.` + uppercaseFirst(primaryKeys[k])
+				convertedVal = strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[k])
 			}
 
 			if k == len(primaryKeys) - 1 {
@@ -464,11 +511,11 @@ func (Object ` + uppercaseFirst(table) + `Obj) Save() {
 			var convertedVal string
 			switch primaryKeyTypes[0] {
 			case "int":
-				convertedVal = `strconv.Itoa(Object.` + uppercaseFirst(primaryKeys[0]) + `)`
+				convertedVal = `strconv.Itoa(` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0]) + `)`
 			case "float64":
-				convertedVal = `strconv.FormatFloat(Object.` + uppercaseFirst(primaryKeys[0]) + `, 'f', -1, 64)`
+				convertedVal = `strconv.FormatFloat(` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0]) + `, 'f', -1, 64)`
 			case "string":
-				convertedVal = `Object.` + uppercaseFirst(primaryKeys[0])
+				convertedVal = strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0])
 			}
 
 			string1 += `
@@ -487,10 +534,12 @@ func (Object ` + uppercaseFirst(table) + `Obj) Save() {
 	con := connection.Get()
 	_, err := con.Exec(query)
 	if err != nil {
-		logger.HandleError(logger.Exception{Msg: err.Error(), File: "models/` + uppercaseFirst(table) + `/CRUX_` + uppercaseFirst(table) + `.go", Method: "Save", Line: 0})
+		logger.HandleError(err)
 	}
 }
 
+//Serves as a global 'toString()' function getting each property's string
+//representation so we can include it in the database query
 func getFieldValue(field reflect.Value) string {
 	var value string
 
@@ -542,13 +591,14 @@ func getFieldValue(field reflect.Value) string {
 
 		string1 += `
 
-func (Object ` + uppercaseFirst(table) + `Obj) Delete() {
+//Deletes record from database
+func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Delete() {
 	query := "DELETE FROM ` + table + ` WHERE` + whereStr + `
 
 	con := connection.Get()
 	_, err := con.Exec(query)
 	if err != nil {
-		logger.HandleError(logger.Exception{Msg: err.Error(), File: "models/` + uppercaseFirst(table) + `/CRUX_` + uppercaseFirst(table) + `.go", Method: "Delete", Line: 0})
+		logger.HandleError(err)
 	}
 }
 `
@@ -591,38 +641,43 @@ func (Object ` + uppercaseFirst(table) + `Obj) Delete() {
 
 		//create ReadById method
 		string1 += `
-func ReadById(` + paramStr + `) ` + uppercaseFirst(table) + `Obj {
+//Returns a single object as pointer
+func ReadById(` + paramStr + `) *` + uppercaseFirst(table) + `Obj {
 	return ReadOneByQuery("SELECT * FROM ` + table + ` WHERE` + whereStr + `)
 }`
 	}
 
 	string1 += `
 
-func ReadAll(order string) []` + uppercaseFirst(table) + `Obj {
+//Returns all records in the table as a slice of ` + uppercaseFirst(table) + `Obj pointers
+func ReadAll(order string) []*` + uppercaseFirst(table) + `Obj {
 	return ReadByQuery("SELECT * FROM ` + table + `", order)
 }`
 
 	string1 += `
 
-func ReadByQuery(query string, order string) []` + uppercaseFirst(table) + `Obj {
+//Returns a slice of ` + uppercaseFirst(table) + `Obj pointers
+//
+//Accepts a query string, and an order string
+func ReadByQuery(query string, order string) []*` + uppercaseFirst(table) + `Obj {
 	connection := connection.Get()
-	objects := []` + uppercaseFirst(table) + `Obj{}
+	objects := make([]*` + uppercaseFirst(table) + `Obj, 0)
 	if order != "" {
 		query += " ORDER BY " + order
 	}
 	query = strings.Replace(query, "'", "\"", -1)
 	rows, err := connection.Query(query)
 	if err != nil {
-		logger.HandleError(logger.Exception{Msg: err.Error(), File: "models/` + uppercaseFirst(table) + `/CRUX_` + uppercaseFirst(table) + `.go", Method: "ReadByQuery", Line: 0})
+		logger.HandleError(err)
 	} else {
 		for rows.Next() {
-			var object ` + uppercaseFirst(table) + `Obj
-			rows.Scan(&object.` + uppercaseFirst(objects[0].Name) + string2 + `)
-			objects = append(objects, object)
+			var ` + strings.ToLower(table) + ` ` + uppercaseFirst(table) + `Obj
+			rows.Scan(&` + strings.ToLower(table) + `.` + uppercaseFirst(objects[0].Name) + string2 + `)
+			objects = append(objects, &` + strings.ToLower(table) + `)
 		}
 		err = rows.Err()
 		if err != nil {
-			logger.HandleError(logger.Exception{Msg: err.Error(), File: "models/` + uppercaseFirst(table) + `/CRUX_` + uppercaseFirst(table) + `.go", Method: "ReadByQuery", Line: 1})
+			logger.HandleError(err)
 		}
 		rows.Close()
 	}
@@ -630,17 +685,29 @@ func ReadByQuery(query string, order string) []` + uppercaseFirst(table) + `Obj 
 	return objects
 }
 
+//Returns a single object as pointer
+//
+//Serves as the LIMIT 1
 func ReadOneByQuery(query string) ` + uppercaseFirst(table) + `Obj {
-	var object ` + uppercaseFirst(table) + `Obj
+	var ` + strings.ToLower(table) + ` ` + uppercaseFirst(table) + `Obj
 
 	con := connection.Get()
 	query = strings.Replace(query, "'", "\"", -1)
-	err := con.QueryRow(query).Scan(&object.` + uppercaseFirst(objects[0].Name) + string2 + `)
+	err := con.QueryRow(query).Scan(&` + strings.ToLower(table) + `.` + uppercaseFirst(objects[0].Name) + string2 + `)
 	if err != nil {
-		logger.HandleError(logger.Exception{Msg: err.Error(), File: "models/` + uppercaseFirst(table) + `/CRUX_` + uppercaseFirst(table) + `.go", Method: "ReadOneByQuery", Line: 0})
+		logger.HandleError(err)
 	}
 
-	return object
+	return &` + strings.ToLower(table) + `
+}
+
+//Method for executing UPDATE queries
+func Exec(query string) {
+	con := connection.Get()
+	_, err := con.Exec(query)
+	if err != nil {
+		logger.HandleError(err)
+	}
 }`
 
 	importString += "\n)"
@@ -660,6 +727,7 @@ func ReadOneByQuery(query string) ` + uppercaseFirst(table) + `Obj {
 	return nil
 }
 
+//Builds DAO_{table}.go file for custom Data Access Object methods
 func buildDaoFile(table string) error {
 	tableNaming := uppercaseFirst(table)
 	dir := GOPATH + "/src/models/" + uppercaseFirst(table) + "/"
@@ -681,6 +749,7 @@ func buildDaoFile(table string) error {
 	return nil
 }
 
+//Builds BO_{table}.go file for custom Business Object methods
 func buildBoFile(table string) error {
 	tableNaming := uppercaseFirst(table)
 	dir := GOPATH + "/src/models/" + uppercaseFirst(table) + "/"
@@ -702,6 +771,7 @@ func buildBoFile(table string) error {
 	return nil
 }
 
+//Builds {table}_test.go file
 func buildTestFile(table string) error {
 	tableNaming := uppercaseFirst(table)
 	dir := GOPATH + "/src/models/" + uppercaseFirst(table) + "/"
@@ -731,6 +801,76 @@ func buildTestFile(table string) error {
 	return nil
 }
 
+//Builds {table}_test.go file
+func buildExamplesFile(table string) error {
+	tableNaming := uppercaseFirst(table)
+	dir := GOPATH + "/src/models/" + uppercaseFirst(table) + "/"
+	examplesFilePath := dir + "examples_test.go"
+
+	if !exists(examplesFilePath) {
+		contents := `package ` + tableNaming + `_test
+
+import (
+	"fmt"
+	"models/` + tableNaming + `"
+)
+
+func Example` + tableNaming + `Obj_Save() {
+	` + strings.ToLower(table) + ` := ` + tableNaming + `.ReadById(` + exampleIdStr + `)
+	` + strings.ToLower(table) + `.` + exampleColumnStr + `
+	` + strings.ToLower(table) + `.Save()
+}
+
+func Example` + tableNaming + `Obj_Delete() {
+	` + strings.ToLower(table) + ` := ` + tableNaming + `.ReadById(` + exampleIdStr + `)
+	` + strings.ToLower(table) + `.Delete()
+}
+
+func ExampleReadAll() {
+	` + strings.ToLower(table) + `s := ` + tableNaming + `.ReadAll("` + exampleOrderStr + `")
+	for i := range ` + strings.ToLower(table) + `s {
+		` + strings.ToLower(table) + ` := ` + strings.ToLower(table) + `s[i]
+		fmt.Println(` + strings.ToLower(table) + `)
+	}
+}
+
+func ExampleReadById() {
+	` + strings.ToLower(table) + ` := ` + tableNaming + `.ReadById(` + exampleIdStr + `)
+	fmt.Println(` + strings.ToLower(table) + `)
+}
+
+func ExampleReadByQuery() {
+	` + strings.ToLower(table) + `s := ` + tableNaming + `.ReadByQuery("SELECT * FROM ` + table + ` WHERE ` + exampleColumn + ` = 'some string'", "` + exampleOrderStr + `")
+	for i := range ` + strings.ToLower(table) + `s {
+		` + strings.ToLower(table) + ` := ` + strings.ToLower(table) + `s[i]
+		fmt.Println(` + strings.ToLower(table) + `)
+	}
+}
+
+func ExampleReadOneByQuery() {
+	` + strings.ToLower(table) + ` := ` + tableNaming + `.ReadOneByQuery("SELECT * FROM ` + table + ` WHERE ` + exampleColumn + ` = 'some string' ORDER BY ` + exampleOrderStr + `")
+	fmt.Println(` + strings.ToLower(table) + `)
+}
+
+func ExampleExec() {
+	` + tableNaming + `.Exec(fmt.Sprintf("UPDATE ` + table + ` SET ` + exampleColumn + ` = 'some string' WHERE id = '%d'", ` + exampleIdStr + `))
+}`
+		err = writeFile(examplesFilePath, contents, false)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err := runCommand("go fmt " + examplesFilePath)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+//Builds main connection package for serving up all database connections
+//with a shared connection pool
 func buildConnectionPackage(host string, database string) error {
 	if !exists(GOPATH + "/src/connection") {
 		err = CreateDirectory(GOPATH + "/src/connection")
@@ -761,7 +901,7 @@ func Get() *sql.DB {
 
 	connection, err = sql.Open("mysql", "` + DB_USERNAME + `:` + DB_PASSWORD + `@tcp(` + host + `:3306)/` + database + `?parseTime=true")
 	if err != nil {
-		logger.HandleError(logger.Exception{Msg: err.Error(), File: "connection/connection.go", Line: 50})
+		logger.HandleError(err)
 	}
 
 	return connection
@@ -779,6 +919,7 @@ func Get() *sql.DB {
 	return nil
 }
 
+//Builds date package to provide date.NullTime type
 func buildDatePackage() error {
 	if !exists(GOPATH + "/src/date") {
 		err = CreateDirectory(GOPATH + "/src/date")
@@ -828,6 +969,7 @@ func (nt NullTime) Value() (driver.Value, error) {
 	return nil
 }
 
+//Builds base logging package that
 func buildLoggerPackage() error {
 	if !exists(GOPATH + "/src/logger") {
 		err = CreateDirectory(GOPATH + "/src/logger")
@@ -839,31 +981,50 @@ func buildLoggerPackage() error {
 	contents := `package logger
 
 import (
+	"database/sql"
 	"fmt"
+	"log"
+	"net"
+	"os"
+	"runtime"
+	"strings"
 )
 
-type Exception struct {
-	Msg  string
-	File string
-	Method string
-	Line int
-}
+var datetime string
+var hostname string
+var ip string
+var line int
+var pc uintptr
+var class string
+var method string
+var file string
 
-func (e *Exception) Error() string {
-	return fmt.Sprintf("%s(%s):%d: %s", e.File, e.Method, e.Line, e.Msg)
+//Method to set all variables used in all functions of logging
+func setVars() {
+	t := time.Now()
+	datetime = t.Format("2006-01-02 15:04:05")
+	hostname, _ = os.Hostname()
+	ipArr, _ := net.LookupHost(hostname)
+	if len(ipArr) == 1 {
+		ip = ipArr[0]
+	}
+	pc, file, line, _ = runtime.Caller(3)
+	path := runtime.FuncForPC(pc).Name()
+	pathArgs := strings.Split(path, ".")
+	class = pathArgs[0]
+	method = pathArgs[1]
 }
 
 func HandleError(e interface{}) {
-	switch e.(type) {
-	case *Exception:
-		//do something
-	case error:
-		//do something
-	default:
-		//unknown error
+	setVars()
+
+	if e == sql.ErrNoRows {
+		//handle queries with no results
+	} else {
+		errorStr := fmt.Sprintf("%s %s(%s.%s):%d - %s", datetime, file, class, method, line, e.Error())
+		log.Fatalln(errorStr)
 	}
-}
-`
+}`
 
 	loggerFilePath := GOPATH + "/src/logger/logger.go"
 	err = writeFile(loggerFilePath, contents, false)

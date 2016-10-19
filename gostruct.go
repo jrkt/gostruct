@@ -2,7 +2,6 @@ package gostruct
 
 import (
 	"flag"
-	"connection"
 	"errors"
 )
 
@@ -25,20 +24,9 @@ func Generate() error {
 	flag.Parse()
 
 	if *all == "true" {
-		connection := connection.Get()
-		rows, err := connection.Query("SELECT DISTINCT(TABLE_NAME) FROM `information_schema`.`COLUMNS` WHERE `TABLE_SCHEMA` LIKE ?", database)
+		err = RunAll(*database, *host, *port)
 		if err != nil {
-			panic(err)
-		} else {
-			for rows.Next() {
-				var table Table
-				rows.Scan(&table.Name)
-
-				err = Run(table.Name, *database, *host, *port)
-				if err != nil {
-					return err
-				}
-			}
+			return err
 		}
 	} else {
 		if (*table == "" && *all != "true") || *database == "" || *host == "" {

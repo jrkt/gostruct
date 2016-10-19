@@ -8,9 +8,7 @@ import (
 	"unicode"
 )
 
-/*
- Checks if path or file exists
- */
+//Checks if path or file exists
 func exists(path string) bool {
 	if _, err := os.Stat(path); err == nil {
 		return true
@@ -19,9 +17,7 @@ func exists(path string) bool {
 	}
 }
 
-/*
- Does exactly what it says it does
- */
+//Does exactly what it says it does
 func uppercaseFirst(s string) string {
 	if len(s) < 2 {
 		return strings.ToLower(s)
@@ -35,9 +31,7 @@ func uppercaseFirst(s string) string {
 	return string(bytes.Join([][]byte{lc, rest}, nil))
 }
 
-/*
- Write contents to file and overwrite
- */
+//Write contents to file and overwrite
 func writeFile(path string, contents string, overwrite bool) error {
 	var err error
 	if exists(path) && overwrite {
@@ -58,9 +52,7 @@ func writeFile(path string, contents string, overwrite bool) error {
 	return nil
 }
 
-/*
- Run commands as if from the command line
- */
+//Run commands as if from the command line
 func runCommand(command string) (string, error) {
 	parts := getCmdParts(command)
 	cmd := exec.Command(parts[0], parts[1:]...)
@@ -72,9 +64,7 @@ func runCommand(command string) (string, error) {
 	return "", nil
 }
 
-/*
- Normalize command into a string array
- */
+//Normalize command into a string array
 func getCmdParts(command string) []string {
 	lastQuote := rune(0)
 	f := func(c rune) bool {
@@ -102,9 +92,7 @@ func getCmdParts(command string) []string {
 	return parts
 }
 
-/*
- Determines if string is in array
- */
+//Determines if string is in array
 func inArray(char string, strings []string) bool {
 	for _, a := range strings {
 		if a == char {
