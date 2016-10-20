@@ -300,7 +300,7 @@ func ReadByQuery(query string, args ...interface{}) ([]*UserObj, error) {
 	objects := make([]*UserObj, 0)
 	query = strings.Replace(query, "'", "\"", -1)
 	rows, err := con.Query(query, args...)
-	if err != nil {
+	if err != nil && err != sql.ErrNoRows {
 		logger.HandleError(err)
 		return objects, err
 	} else {
@@ -310,7 +310,7 @@ func ReadByQuery(query string, args ...interface{}) ([]*UserObj, error) {
 			objects = append(objects, &user)
 		}
 		err = rows.Err()
-		if err != nil {
+		if err != nil && err != sql.ErrNoRows {
 			logger.HandleError(err)
 			return objects, err
 		} else if len(objects) == 0 {
@@ -330,7 +330,7 @@ func ReadOneByQuery(query string, args ...interface{}) (*UserObj, error) {
 	con := connection.Get()
 	query = strings.Replace(query, "'", "\"", -1)
 	err := con.QueryRow(query, args...).Scan(&user.Id, &user.Name, &user.Email, &user.Income, &user.IsActive, &user.SignupDate, &user.TerminationDate)
-	if err != nil {
+	if err != nil && err != sql.ErrNoRows {
 		logger.HandleError(err)
 	}
 

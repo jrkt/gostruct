@@ -679,7 +679,7 @@ func ReadByQuery(query string, args ...interface{}) ([]*` + uppercaseFirst(table
 	objects := make([]*` + uppercaseFirst(table) + `Obj, 0)
 	query = strings.Replace(query, "'", "\"", -1)
 	rows, err := con.Query(query, args...)
-	if err != nil {
+	if err != nil && err != sql.ErrNoRows {
 		logger.HandleError(err)
 		return objects, err
 	} else {
@@ -689,7 +689,7 @@ func ReadByQuery(query string, args ...interface{}) ([]*` + uppercaseFirst(table
 			objects = append(objects, &` + strings.ToLower(table) + `)
 		}
 		err = rows.Err()
-		if err != nil {
+		if err != nil && err != sql.ErrNoRows {
 			logger.HandleError(err)
 			return objects, err
 		} else if len(objects) == 0 {
@@ -709,7 +709,7 @@ func ReadOneByQuery(query string, args ...interface{}) (*` + uppercaseFirst(tabl
 	con := connection.Get()
 	query = strings.Replace(query, "'", "\"", -1)
 	err := con.QueryRow(query, args...).Scan(&` + strings.ToLower(table) + `.` + uppercaseFirst(objects[0].Name) + string2 + `)
-	if err != nil {
+	if err != nil && err != sql.ErrNoRows {
 		logger.HandleError(err)
 	}
 
