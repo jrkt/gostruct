@@ -836,14 +836,20 @@ func Example` + tableNaming + `Obj_Save() {
 	` + strings.ToLower(table) + `, err := ` + tableNaming + `.ReadById(` + exampleIdStr + `)
 	if err == nil {
 		` + strings.ToLower(table) + `.` + exampleColumnStr + `
-		` + strings.ToLower(table) + `.Save()
+		_, err = ` + strings.ToLower(table) + `.Save()
+		if err != nil {
+			//Save failed
+		}
 	}
 }
 
 func Example` + tableNaming + `Obj_Delete() {
 	` + strings.ToLower(table) + `, err := ` + tableNaming + `.ReadById(` + exampleIdStr + `)
 	if err == nil {
-		` + strings.ToLower(table) + `.Delete()
+		_, err = ` + strings.ToLower(table) + `.Delete()
+		if err != nil {
+			//Delete failed
+		}
 	}
 }
 
@@ -858,8 +864,11 @@ func ExampleReadAll() {
 }
 
 func ExampleReadById() {
-	` + strings.ToLower(table) + `, _ := ` + tableNaming + `.ReadById(` + exampleIdStr + `)
-	fmt.Println(` + strings.ToLower(table) + `)
+	` + strings.ToLower(table) + `, err := ` + tableNaming + `.ReadById(` + exampleIdStr + `)
+	if err == nil {
+		//handle ` + strings.ToLower(table) + ` object
+		fmt.Println(` + strings.ToLower(table) + `)
+	}
 }
 
 func ExampleReadByQuery() {
@@ -873,8 +882,11 @@ func ExampleReadByQuery() {
 }
 
 func ExampleReadOneByQuery() {
-	` + strings.ToLower(table) + `, _ := ` + tableNaming + `.ReadOneByQuery("SELECT * FROM ` + table + ` WHERE ` + exampleColumn + ` = ? ORDER BY ` + exampleOrderStr + `", "some string")
-	fmt.Println(` + strings.ToLower(table) + `)
+	` + strings.ToLower(table) + `, err := ` + tableNaming + `.ReadOneByQuery("SELECT * FROM ` + table + ` WHERE ` + exampleColumn + ` = ? ORDER BY ` + exampleOrderStr + `", "some string")
+	if err == nil {
+		//handle ` + strings.ToLower(table) + ` object
+		fmt.Println(` + strings.ToLower(table) + `)
+	}
 }
 
 func ExampleExec() {
