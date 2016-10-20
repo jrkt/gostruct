@@ -169,45 +169,44 @@ func Get() *sql.DB {
 # DAO_User.go - sample method to include
 ```go
 func ReadAllActive(order string) ([]*UserObj, error) {
-    query := "SELECT * FROM User WHERE IsActive = '1'"
-    if order != "" {
-    	query += " ORDER BY " + order
-    }
-    return ReadByQuery(query)
+	query := "SELECT * FROM User WHERE IsActive = '1'"
+	if order != "" {
+		query += " ORDER BY " + order
+	}
+	return ReadByQuery(query)
 }
 ```
 Usage:
 ```go
 func main() {
-    users, err := User.ReadAllActive("Name ASC")
-    if err == nil {
-    	//handle users
-    	fmt.Println(users)
-    }
+	users, err := User.ReadAllActive("Name ASC")
+	if err == nil {
+		//handle users
+		fmt.Println(users)
+	}
 }
 ```
 # BO_User.go - sample method to include
 ```go
 func (user *UserObj) Terminate() {
-    user.IsActive = false
-    user.TerminationDate = time.Now()
-    _, err := user.Save()
-    if err != nil {
-    	//Save failed
-    }
+	user.IsActive = false
+	user.TerminationDate = time.Now()
+	_, err := user.Save()
+	if err != nil {
+		//Save failed
+	}
 }
 ```
 Usage:
 ```go
 func main() {
-    users, err := User.ReadAllActive("Name ASC")
-    if err == nil {
-	    for i := range users {
-		user := users[i]
-		user.Terminate()
-	    }
-    }
-   
+	users, err := User.ReadAllActive("Name ASC")
+	if err == nil {
+		for i := range users {
+			user := users[i]
+			user.Terminate()
+		}
+	}
 }
 ```
 # CRUX_User.go - sample file
