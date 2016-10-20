@@ -43,10 +43,13 @@ var exampleColumn string
 var exampleColumnStr string
 var exampleOrderStr string
 
+//initialize global GOPATH
+func init() {
+	GOPATH = os.Getenv("GOPATH")
+}
+
 //Generates a package for a single table
 func Run(table string, database string, host string, port string) error {
-	GOPATH = os.Getenv("GOPATH")
-
 	// if empty set port to MySQL default port
 	if port == "" {
 		port = "3306"
@@ -388,7 +391,7 @@ type ` + uppercaseFirst(table) + "Obj struct {"
 
 //Save accepts a ` + uppercaseFirst(table) + `Obj pointer and
 //applies any updates needed to the record in the database
-func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Save() {
+func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Save() (sql.Result, error) {
 	v := reflect.ValueOf(` + strings.ToLower(table) + `).Elem()
 	objType := v.Type()`
 
@@ -482,11 +485,13 @@ func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Save() {
 	}`
 		}
 
-		whereStr, whereStr2 := "", ""
+		whereStr, whereStr2, whereStrQuery, whereStrQueryValues := "", "", "", ""
 		for k := range primaryKeys {
 			if k > 0 {
 				whereStr += " AND"
+				whereStrQuery += " AND"
 				whereStr2 += ","
+				whereStrQueryValues += ","
 			}
 			var convertedVal string
 			switch primaryKeyTypes[k] {
@@ -505,6 +510,8 @@ func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Save() {
 				whereStr += ` ` + primaryKeys[k] + ` = \"" + ` + convertedVal + ` + "\"`
 				whereStr2 += ` ` + primaryKeys[k] + ` = \"" + ` + convertedVal + ` + "\"`
 			}
+			whereStrQuery += ` ` + primaryKeys[k] + ` = ?`
+			whereStrQueryValues += ` ` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[k])
 		}
 
 		if len(primaryKeys) == 1 {
@@ -532,10 +539,12 @@ func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Save() {
 		string1 += `
 
 	con := connection.Get()
-	_, err := con.Exec(query)
+	result, err := con.Exec(query)
 	if err != nil {
 		logger.HandleError(err)
 	}
+
+	return result, err
 }
 
 //Serves as a global 'toString()' function getting each property's string
@@ -592,17 +601,17 @@ func getFieldValue(field reflect.Value) string {
 		string1 += `
 
 //Deletes record from database
-func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Delete() {
-	query := "DELETE FROM ` + table + ` WHERE` + whereStr + `
-
+func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Delete() (sql.Result, error) {
 	con := connection.Get()
-	_, err := con.Exec(query)
+	result, err := con.Exec("DELETE FROM ` + table + ` WHERE` + whereStrQuery + `", ` + whereStrQueryValues + `)
 	if err != nil {
 		logger.HandleError(err)
 	}
+
+	return result, err
 }
 `
-		paramStr, whereStr := "", ""
+		paramStr, whereStr, whereStrValues := "", "", ""
 		for k := range primaryKeys {
 			var param string
 			if primaryKeys[k] == "type" {
@@ -630,6 +639,7 @@ func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Delete()
 			paramStr += param + " " + dataType
 			if k > 0 {
 				whereStr += " AND"
+				whereStrValues += ","
 			}
 			if k == len(primaryKeys) - 1 {
 				whereStr += ` ` + param + ` = '" + ` + paramTypeStr + ` + "'"`
@@ -637,21 +647,26 @@ func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Delete()
 				paramStr += ", "
 				whereStr += ` ` + param + ` = '" + ` + paramTypeStr + ` + "'`
 			}
+			whereStrValues += " " + param
 		}
 
 		//create ReadById method
 		string1 += `
 //Returns a single object as pointer
-func ReadById(` + paramStr + `) *` + uppercaseFirst(table) + `Obj {
-	return ReadOneByQuery("SELECT * FROM ` + table + ` WHERE` + whereStr + `)
+func ReadById(` + paramStr + `) (*` + uppercaseFirst(table) + `Obj, error) {
+	return ReadOneByQuery("SELECT * FROM ` + table + ` WHERE` + whereStrQuery + `", ` + whereStrValues + `)
 }`
 	}
 
 	string1 += `
 
 //Returns all records in the table as a slice of ` + uppercaseFirst(table) + `Obj pointers
-func ReadAll(order string) []*` + uppercaseFirst(table) + `Obj {
-	return ReadByQuery("SELECT * FROM ` + table + `", order)
+func ReadAll(order string) ([]*` + uppercaseFirst(table) + `Obj, error) {
+	query := "SELECT * FROM ` + table + `"
+	if order != "" {
+		query += " ORDER BY " + order
+	}
+	return ReadByQuery(query)
 }`
 
 	string1 += `
@@ -659,16 +674,14 @@ func ReadAll(order string) []*` + uppercaseFirst(table) + `Obj {
 //Returns a slice of ` + uppercaseFirst(table) + `Obj pointers
 //
 //Accepts a query string, and an order string
-func ReadByQuery(query string, order string) []*` + uppercaseFirst(table) + `Obj {
-	connection := connection.Get()
+func ReadByQuery(query string, args ...interface{}) ([]*` + uppercaseFirst(table) + `Obj, error) {
+	con := connection.Get()
 	objects := make([]*` + uppercaseFirst(table) + `Obj, 0)
-	if order != "" {
-		query += " ORDER BY " + order
-	}
 	query = strings.Replace(query, "'", "\"", -1)
-	rows, err := connection.Query(query)
+	rows, err := con.Query(query, args...)
 	if err != nil {
 		logger.HandleError(err)
+		return objects, err
 	} else {
 		for rows.Next() {
 			var ` + strings.ToLower(table) + ` ` + uppercaseFirst(table) + `Obj
@@ -678,36 +691,40 @@ func ReadByQuery(query string, order string) []*` + uppercaseFirst(table) + `Obj
 		err = rows.Err()
 		if err != nil {
 			logger.HandleError(err)
+			return objects, err
+		} else if len(objects) == 0 {
+			return objects, sql.ErrNoRows
 		}
 		rows.Close()
 	}
 
-	return objects
+	return objects, nil
 }
 
 //Returns a single object as pointer
 //
 //Serves as the LIMIT 1
-func ReadOneByQuery(query string) ` + uppercaseFirst(table) + `Obj {
+func ReadOneByQuery(query string, args ...interface{}) (*` + uppercaseFirst(table) + `Obj, error) {
 	var ` + strings.ToLower(table) + ` ` + uppercaseFirst(table) + `Obj
-
 	con := connection.Get()
 	query = strings.Replace(query, "'", "\"", -1)
-	err := con.QueryRow(query).Scan(&` + strings.ToLower(table) + `.` + uppercaseFirst(objects[0].Name) + string2 + `)
+	err := con.QueryRow(query, args...).Scan(&` + strings.ToLower(table) + `.` + uppercaseFirst(objects[0].Name) + string2 + `)
 	if err != nil {
 		logger.HandleError(err)
 	}
 
-	return &` + strings.ToLower(table) + `
+	return &` + strings.ToLower(table) + `, err
 }
 
 //Method for executing UPDATE queries
-func Exec(query string) {
+func Exec(query string, args ...interface{}) (sql.Result, error) {
 	con := connection.Get()
-	_, err := con.Exec(query)
+	result, err := con.Exec(query, args...)
 	if err != nil {
 		logger.HandleError(err)
 	}
+
+	return result, err
 }`
 
 	importString += "\n)"
@@ -816,44 +833,55 @@ import (
 )
 
 func Example` + tableNaming + `Obj_Save() {
-	` + strings.ToLower(table) + ` := ` + tableNaming + `.ReadById(` + exampleIdStr + `)
-	` + strings.ToLower(table) + `.` + exampleColumnStr + `
-	` + strings.ToLower(table) + `.Save()
+	` + strings.ToLower(table) + `, err := ` + tableNaming + `.ReadById(` + exampleIdStr + `)
+	if err == nil {
+		` + strings.ToLower(table) + `.` + exampleColumnStr + `
+		` + strings.ToLower(table) + `.Save()
+	}
 }
 
 func Example` + tableNaming + `Obj_Delete() {
-	` + strings.ToLower(table) + ` := ` + tableNaming + `.ReadById(` + exampleIdStr + `)
-	` + strings.ToLower(table) + `.Delete()
+	` + strings.ToLower(table) + `, err := ` + tableNaming + `.ReadById(` + exampleIdStr + `)
+	if err == nil {
+		` + strings.ToLower(table) + `.Delete()
+	}
 }
 
 func ExampleReadAll() {
-	` + strings.ToLower(table) + `s := ` + tableNaming + `.ReadAll("` + exampleOrderStr + `")
-	for i := range ` + strings.ToLower(table) + `s {
-		` + strings.ToLower(table) + ` := ` + strings.ToLower(table) + `s[i]
-		fmt.Println(` + strings.ToLower(table) + `)
+	` + strings.ToLower(table) + `s, err := ` + tableNaming + `.ReadAll("` + exampleOrderStr + `")
+	if err == nil {
+		for i := range ` + strings.ToLower(table) + `s {
+			` + strings.ToLower(table) + ` := ` + strings.ToLower(table) + `s[i]
+			fmt.Println(` + strings.ToLower(table) + `)
+		}
 	}
 }
 
 func ExampleReadById() {
-	` + strings.ToLower(table) + ` := ` + tableNaming + `.ReadById(` + exampleIdStr + `)
+	` + strings.ToLower(table) + `, _ := ` + tableNaming + `.ReadById(` + exampleIdStr + `)
 	fmt.Println(` + strings.ToLower(table) + `)
 }
 
 func ExampleReadByQuery() {
-	` + strings.ToLower(table) + `s := ` + tableNaming + `.ReadByQuery("SELECT * FROM ` + table + ` WHERE ` + exampleColumn + ` = 'some string'", "` + exampleOrderStr + `")
-	for i := range ` + strings.ToLower(table) + `s {
-		` + strings.ToLower(table) + ` := ` + strings.ToLower(table) + `s[i]
-		fmt.Println(` + strings.ToLower(table) + `)
+	` + strings.ToLower(table) + `s, err := ` + tableNaming + `.ReadByQuery("SELECT * FROM ` + table + ` WHERE ` + exampleColumn + ` = 'some string'", "` + exampleOrderStr + `")
+	if err == nil {
+		for i := range ` + strings.ToLower(table) + `s {
+			` + strings.ToLower(table) + ` := ` + strings.ToLower(table) + `s[i]
+			fmt.Println(` + strings.ToLower(table) + `)
+		}
 	}
 }
 
 func ExampleReadOneByQuery() {
-	` + strings.ToLower(table) + ` := ` + tableNaming + `.ReadOneByQuery("SELECT * FROM ` + table + ` WHERE ` + exampleColumn + ` = 'some string' ORDER BY ` + exampleOrderStr + `")
+	` + strings.ToLower(table) + `, _ := ` + tableNaming + `.ReadOneByQuery("SELECT * FROM ` + table + ` WHERE ` + exampleColumn + ` = 'some string' ORDER BY ` + exampleOrderStr + `")
 	fmt.Println(` + strings.ToLower(table) + `)
 }
 
 func ExampleExec() {
-	` + tableNaming + `.Exec(fmt.Sprintf("UPDATE ` + table + ` SET ` + exampleColumn + ` = 'some string' WHERE id = '%d'", ` + exampleIdStr + `))
+	_, err := ` + tableNaming + `.Exec(fmt.Sprintf("UPDATE ` + table + ` SET ` + exampleColumn + ` = 'some string' WHERE id = '%d'", ` + exampleIdStr + `))
+	if err != nil {
+		//Exec failed
+	}
 }`
 		err = writeFile(examplesFilePath, contents, false)
 		if err != nil {
