@@ -374,14 +374,20 @@ func ExampleUserObj_Save() {
 	user, err := User.ReadById(12345)
 	if err == nil {
 		user.Email = "some string"
-		user.Save()
+		_, err = user.Save()
+		if err != nil {
+			//Save failed
+		}
 	}
 }
 
 func ExampleUserObj_Delete() {
 	user, err := User.ReadById(12345)
 	if err == nil {
-		user.Delete()
+		_, err = user.Delete()
+		if err != nil {
+			//Delete failed
+		}
 	}
 }
 
@@ -396,8 +402,11 @@ func ExampleReadAll() {
 }
 
 func ExampleReadById() {
-	user, _ := User.ReadById(12345)
-	fmt.Println(user)
+	user, err := User.ReadById(12345)
+	if err == nil {
+		//handle user object
+		fmt.Println(user)
+	}
 }
 
 func ExampleReadByQuery() {
@@ -411,8 +420,11 @@ func ExampleReadByQuery() {
 }
 
 func ExampleReadOneByQuery() {
-	user, _ := User.ReadOneByQuery("SELECT * FROM User WHERE email = ? ORDER BY id DESC", "some string")
-	fmt.Println(user)
+	user, err := User.ReadOneByQuery("SELECT * FROM User WHERE email = ? ORDER BY id DESC", "some string")
+	if err == nil {
+		//handle user object
+		fmt.Println(user)
+	}
 }
 
 func ExampleExec() {
