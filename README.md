@@ -63,18 +63,26 @@ import (
 
 func main() {
     //retrieve existing user by id
-    user := User.ReadById(12345)
-    user.Email = "test@email.com"
-    user.IsActive = false
-    user.Save()
-
+    user, err := User.ReadById(12345)
+    if err == nil {
+	    user.Email = "test@email.com"
+	    user.IsActive = false
+	    user.Save()
+    }
+    
     //create new user
     user := new(User.UserObj)
     user.Email = "test@email.com"
-    user.Save()
+    _, err := user.Save()
+    if err != nil {
+    	//Save failed
+    }
 
     //delete user
-    user.Delete()
+    _, err := user.Delete()
+    if err != nil {
+    	//Delete failed
+    }
 }
 ```
 # logger.go - base package
@@ -160,15 +168,22 @@ func Get() *sql.DB {
 
 # DAO_User.go - sample method to include
 ```go
-func ReadAllActive(order string) []*UserObj {
-    return ReadByQuery("SELECT * FROM User WHERE IsActive = '1'", order)
+func ReadAllActive(order string) ([]*UserObj, error) {
+    query := "SELECT * FROM User WHERE IsActive = '1'"
+    if order != "" {
+    	query += " ORDER BY " + order
+    }
+    return ReadByQuery(query)
 }
 ```
 Usage:
 ```go
 func main() {
-    users := User.ReadAllActive("Name ASC")
-    fmt.Println(users)
+    users, err := User.ReadAllActive("Name ASC")
+    if err == nil {
+    	//handle users
+    	fmt.Println(users)
+    }
 }
 ```
 # BO_User.go - sample method to include
@@ -176,17 +191,23 @@ func main() {
 func (user *UserObj) Terminate() {
     user.IsActive = false
     user.TerminationDate = time.Now()
-    user.Save()
+    _, err := user.Save()
+    if err != nil {
+    	//Save failed
+    }
 }
 ```
 Usage:
 ```go
 func main() {
-    users := User.ReadAllActive("Name ASC")
-    for i := range users {
-        user := users[i]
-        user.Terminate()
+    users, err := User.ReadAllActive("Name ASC")
+    if err == nil {
+	    for i := range users {
+		user := users[i]
+		user.Terminate()
+	    }
     }
+   
 }
 ```
 # CRUX_User.go - sample file
@@ -223,7 +244,7 @@ type UserObj struct {
 
 //Save accepts a UserObj pointer and
 //applies any updates needed to the record in the database
-func (user *UserObj) Save() {
+func (user *UserObj) Save() (sql.Result, error) {
 	v := reflect.ValueOf(user).Elem()
 	objType := v.Type()
 
@@ -269,10 +290,12 @@ func (user *UserObj) Save() {
 	}
 
 	con := connection.Get()
-	_, err := con.Exec(query)
+	result, err := con.Exec(query)
 	if err != nil {
 		logger.HandleError(err)
 	}
+
+	return result, err
 }
 
 //Serves as a global 'toString()' function getting each property's string
@@ -327,39 +350,41 @@ func getFieldValue(field reflect.Value) string {
 }
 
 //Deletes record from database
-func (user *UserObj) Delete() {
-	query := "DELETE FROM User WHERE id = \"" + strconv.Itoa(user.Id) + "\""
-
+func (user *UserObj) Delete() (sql.Result, error) {
 	con := connection.Get()
-	_, err := con.Exec(query)
+	result, err := con.Exec("DELETE FROM User WHERE id = ?", user.Id)
 	if err != nil {
 		logger.HandleError(err)
 	}
+
+	return result, err
 }
 
 //Returns a single object as pointer
-func ReadById(id int) *UserObj {
-	return ReadOneByQuery("SELECT * FROM User WHERE id = '" + strconv.Itoa(id) + "'")
+func ReadById(id int) (*UserObj, error) {
+	return ReadOneByQuery("SELECT * FROM User WHERE id = ?", id)
 }
 
 //Returns all records in the table as a slice of UserObj pointers
-func ReadAll(order string) []*UserObj {
-	return ReadByQuery("SELECT * FROM User", order)
+func ReadAll(order string) ([]*UserObj, error) {
+	query := "SELECT * FROM User"
+	if order != "" {
+		query += " ORDER BY " + order
+	}
+	return ReadByQuery(query)
 }
 
 //Returns a slice of UserObj pointers
 //
 //Accepts a query string, and an order string
-func ReadByQuery(query string, order string) []*UserObj {
-	connection := connection.Get()
+func ReadByQuery(query string, args ...interface{}) ([]*UserObj, error) {
+	con := connection.Get()
 	objects := make([]*UserObj, 0)
-	if order != "" {
-		query += " ORDER BY " + order
-	}
 	query = strings.Replace(query, "'", "\"", -1)
-	rows, err := connection.Query(query)
+	rows, err := con.Query(query, args...)
 	if err != nil {
 		logger.HandleError(err)
+		return objects, err
 	} else {
 		for rows.Next() {
 			var user UserObj
@@ -369,38 +394,41 @@ func ReadByQuery(query string, order string) []*UserObj {
 		err = rows.Err()
 		if err != nil {
 			logger.HandleError(err)
+			return objects, err
+		} else if len(objects) == 0 {
+			return objects, sql.ErrNoRows
 		}
 		rows.Close()
 	}
 
-	return objects
+	return objects, nil
 }
 
 //Returns a single object as pointer
 //
 //Serves as the LIMIT 1
-func ReadOneByQuery(query string) UserObj {
+func ReadOneByQuery(query string, args ...interface{}) (*UserObj, error) {
 	var user UserObj
-
 	con := connection.Get()
 	query = strings.Replace(query, "'", "\"", -1)
-	err := con.QueryRow(query).Scan(&user.Id, &user.Name, &user.Email, &user.Income, &user.IsActive, &user.SignupDate, &user.TerminationDate)
+	err := con.QueryRow(query, args...).Scan(&user.Id, &user.Name, &user.Email, &user.Income, &user.IsActive, &user.SignupDate, &user.TerminationDate)
 	if err != nil {
 		logger.HandleError(err)
 	}
 
-	return &user
+	return &user, err
 }
 
 //Method for executing UPDATE queries
-func Exec(query string) {
+func Exec(query string, args ...interface{}) (sql.Result, error) {
 	con := connection.Get()
-	_, err := con.Exec(query)
+	result, err := con.Exec(query, args...)
 	if err != nil {
 		logger.HandleError(err)
 	}
-}
 
+	return result, err
+}
 ```
 
 # User_test.go - sample file
@@ -425,44 +453,55 @@ import (
 )
 
 func ExampleUserObj_Save() {
-	user := User.ReadById(12345)
-	user.Email = "some string"
-	user.Save()
+	user, err := User.ReadById(12345)
+	if err == nil {
+		user.Email = "some string"
+		user.Save()
+	}
 }
 
 func ExampleUserObj_Delete() {
-	user := User.ReadById(12345)
-	user.Delete()
+	user, err := User.ReadById(12345)
+	if err == nil {
+		user.Delete()
+	}
 }
 
 func ExampleReadAll() {
-	users := User.ReadAll("id DESC")
-	for i := range users {
-		user := users[i]
-		fmt.Println(user)
+	users, err := User.ReadAll("id DESC")
+	if err == nil {
+		for i := range users {
+			user := users[i]
+			fmt.Println(user)
+		}
 	}
 }
 
 func ExampleReadById() {
-	user := User.ReadById(12345)
+	user, _ := User.ReadById(12345)
 	fmt.Println(user)
 }
 
 func ExampleReadByQuery() {
-	users := User.ReadByQuery("SELECT * FROM User WHERE email = 'some string'", "id DESC")
-	for i := range users {
-		user := users[i]
-		fmt.Println(user)
+	users, err := User.ReadByQuery("SELECT * FROM User WHERE email = ? ORDER BY id DESC", "some string")
+	if err == nil {
+		for i := range users {
+			user := users[i]
+			fmt.Println(user)
+		}
 	}
 }
 
 func ExampleReadOneByQuery() {
-	user := User.ReadOneByQuery("SELECT * FROM User WHERE email = 'some string' ORDER BY id DESC")
+	user, _ := User.ReadOneByQuery("SELECT * FROM User WHERE email = ? ORDER BY id DESC", "some string")
 	fmt.Println(user)
 }
 
 func ExampleExec() {
-	User.Exec(fmt.Sprintf("UPDATE User SET email = 'some string' WHERE id = '%d'", 12345))
+	_, err := User.Exec("UPDATE User SET email = ? WHERE id = ?", "some string", 12345)
+	if err != nil {
+		//Exec failed
+	}
 }
 ```
 # Screenshots of godocs created from auto-generated package
