@@ -85,87 +85,6 @@ func main() {
     }
 }
 ```
-# logger.go - base package
-```go
-package logger
-
-import (
-	"database/sql"
-	"fmt"
-	"log"
-	"net"
-	"os"
-	"runtime"
-	"strings"
-)
-
-var datetime string
-var hostname string
-var ip string
-var line int
-var pc uintptr
-var class string
-var method string
-var file string
-
-//Method to set all variables used in all functions of logging
-func setVars() {
-	t := time.Now()
-	datetime = t.Format("2006-01-02 15:04:05")
-	hostname, _ = os.Hostname()
-	ipArr, _ := net.LookupHost(hostname)
-	if len(ipArr) == 1 {
-		ip = ipArr[0]
-	}
-	pc, file, line, _ = runtime.Caller(3)
-	path := runtime.FuncForPC(pc).Name()
-	pathArgs := strings.Split(path, ".")
-	class = pathArgs[0]
-	method = pathArgs[1]
-}
-
-func HandleError(e interface{}) {
-	setVars()
-
-	if e == sql.ErrNoRows {
-		//handle queries with no results
-	} else {
-		errorStr := fmt.Sprintf("%s %s(%s.%s):%d - %s", datetime, file, class, method, line, e.Error())
-		log.Fatalln(errorStr)
-	}
-}
-```
-# connection.go base package
-```go
-package connection
-
-import (
-	"database/sql"
-	_ "github.com/go-sql-driver/mysql"
-	"logger"
-)
-
-var connection *sql.DB
-var err error
-
-func Get() *sql.DB {
-	if connection != nil {
-		//determine whether connection is still alive
-		err = connection.Ping()
-		if err == nil {
-			return connection
-		}
-	}
-
-	connection, err = sql.Open("mysql", "{username}:{password}@tcp({host}:{port})/{database}?parseTime=true")
-	if err != nil {
-		logger.HandleError(err)
-	}
-
-	return connection
-}
-```
-
 # DAO_User.go - sample method to include
 ```go
 func ReadAllActive(order string) ([]*UserObj, error) {
@@ -501,6 +420,86 @@ func ExampleExec() {
 	if err != nil {
 		//Exec failed
 	}
+}
+```
+# logger.go - base package
+```go
+package logger
+
+import (
+	"database/sql"
+	"fmt"
+	"log"
+	"net"
+	"os"
+	"runtime"
+	"strings"
+)
+
+var datetime string
+var hostname string
+var ip string
+var line int
+var pc uintptr
+var class string
+var method string
+var file string
+
+//Method to set all variables used in all functions of logging
+func setVars() {
+	t := time.Now()
+	datetime = t.Format("2006-01-02 15:04:05")
+	hostname, _ = os.Hostname()
+	ipArr, _ := net.LookupHost(hostname)
+	if len(ipArr) == 1 {
+		ip = ipArr[0]
+	}
+	pc, file, line, _ = runtime.Caller(3)
+	path := runtime.FuncForPC(pc).Name()
+	pathArgs := strings.Split(path, ".")
+	class = pathArgs[0]
+	method = pathArgs[1]
+}
+
+func HandleError(e interface{}) {
+	setVars()
+
+	if e == sql.ErrNoRows {
+		//handle queries with no results
+	} else {
+		errorStr := fmt.Sprintf("%s %s(%s.%s):%d - %s", datetime, file, class, method, line, e.Error())
+		log.Fatalln(errorStr)
+	}
+}
+```
+# connection.go base package
+```go
+package connection
+
+import (
+	"database/sql"
+	_ "github.com/go-sql-driver/mysql"
+	"logger"
+)
+
+var connection *sql.DB
+var err error
+
+func Get() *sql.DB {
+	if connection != nil {
+		//determine whether connection is still alive
+		err = connection.Ping()
+		if err == nil {
+			return connection
+		}
+	}
+
+	connection, err = sql.Open("mysql", "{username}:{password}@tcp({host}:{port})/{database}?parseTime=true")
+	if err != nil {
+		logger.HandleError(err)
+	}
+
+	return connection
 }
 ```
 # Screenshots of godocs created from auto-generated package
