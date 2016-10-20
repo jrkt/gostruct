@@ -863,7 +863,7 @@ func ExampleReadById() {
 }
 
 func ExampleReadByQuery() {
-	` + strings.ToLower(table) + `s, err := ` + tableNaming + `.ReadByQuery("SELECT * FROM ` + table + ` WHERE ` + exampleColumn + ` = 'some string'", "` + exampleOrderStr + `")
+	` + strings.ToLower(table) + `s, err := ` + tableNaming + `.ReadByQuery("SELECT * FROM ` + table + ` WHERE ` + exampleColumn + ` = ? ORDER BY ` + exampleOrderStr + `", "some string")
 	if err == nil {
 		for i := range ` + strings.ToLower(table) + `s {
 			` + strings.ToLower(table) + ` := ` + strings.ToLower(table) + `s[i]
@@ -873,12 +873,12 @@ func ExampleReadByQuery() {
 }
 
 func ExampleReadOneByQuery() {
-	` + strings.ToLower(table) + `, _ := ` + tableNaming + `.ReadOneByQuery("SELECT * FROM ` + table + ` WHERE ` + exampleColumn + ` = 'some string' ORDER BY ` + exampleOrderStr + `")
+	` + strings.ToLower(table) + `, _ := ` + tableNaming + `.ReadOneByQuery("SELECT * FROM ` + table + ` WHERE ` + exampleColumn + ` = ? ORDER BY ` + exampleOrderStr + `", "some string")
 	fmt.Println(` + strings.ToLower(table) + `)
 }
 
 func ExampleExec() {
-	_, err := ` + tableNaming + `.Exec(fmt.Sprintf("UPDATE ` + table + ` SET ` + exampleColumn + ` = 'some string' WHERE id = '%d'", ` + exampleIdStr + `))
+	_, err := ` + tableNaming + `.Exec("UPDATE ` + table + ` SET ` + exampleColumn + ` = ? WHERE id = ?", "some string", ` + exampleIdStr + `)
 	if err != nil {
 		//Exec failed
 	}
