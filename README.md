@@ -88,11 +88,11 @@ func main() {
 # DAO_User.go - sample method to include
 ```go
 func ReadAllActive(order string) ([]*UserObj, error) {
-	query := "SELECT * FROM User WHERE IsActive = '1'"
+	orderStr := ""
 	if order != "" {
-		query += " ORDER BY " + order
+		orderStr = " ORDER BY " + order
 	}
-	return ReadByQuery(query)
+	return ReadByQuery("SELECT * FROM User WHERE IsActive = '1'" + orderStr)
 }
 ```
 Usage:
@@ -109,7 +109,7 @@ func main() {
 ```go
 func (user *UserObj) Terminate() {
 	user.IsActive = false
-	user.TerminationDate = time.Now()
+	user.TerminationDate.Time = time.Now()
 	_, err := user.Save()
 	if err != nil {
 		//Save failed
@@ -518,3 +518,5 @@ func Get() *sql.DB {
 <img src="img/User_godocs_1.png">
 <img src="img/User_godocs_2.png">
 <img src="img/User_godocs_3.png">
+<img src="img/User_godocs_4.png">
+<img src="img/User_godocs_5.png">

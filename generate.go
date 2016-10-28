@@ -21,6 +21,7 @@ type TableObj struct {
 	Key        string
 	DataType   string
 	ColumnType string
+	Default    sql.NullString
 }
 
 type UsedColumn struct {
@@ -74,6 +75,12 @@ func Run(table string, database string, host string, port string) error {
 	}
 
 	err = buildLoggerPackage()
+	if err != nil {
+		return err
+	}
+
+	//handle utils file
+	err = buildUtilsPackage()
 	if err != nil {
 		return err
 	}
@@ -149,7 +156,7 @@ func handleTable(table string, database string, host string, port string) error 
 		return err
 	}
 
-	rows1, err := con.Query("SELECT column_name, is_nullable, column_key, data_type, column_type FROM information_schema.columns WHERE table_name = ? AND table_schema = ?", table, database)
+	rows1, err := con.Query("SELECT column_name, is_nullable, column_key, data_type, column_type, column_default FROM information_schema.columns WHERE table_name = ? AND table_schema = ?", table, database)
 
 	var object TableObj
 	var objects []TableObj = make([]TableObj, 0)
@@ -160,7 +167,7 @@ func handleTable(table string, database string, host string, port string) error 
 	} else {
 		cntPK := 0
 		for rows1.Next() {
-			rows1.Scan(&object.Name, &object.IsNullable, &object.Key, &object.DataType, &object.ColumnType)
+			rows1.Scan(&object.Name, &object.IsNullable, &object.Key, &object.DataType, &object.ColumnType, &object.Default)
 			objects = append(objects, object)
 			if object.Key == "PRI" {
 				cntPK++
@@ -261,7 +268,7 @@ import (
 	"logger"
 	"reflect"
 	"strconv"
-	"time"`
+	"utils"`
 
 	string1 := `
 
@@ -381,11 +388,18 @@ type ` + uppercaseFirst(table) + "Obj struct {"
 		if i > 0 {
 			string2 += ", &" + strings.ToLower(table) + "." + uppercaseFirst(object.Name)
 		}
-		string1 += "\n\t" + uppercaseFirst(object.Name) + "\t\t" + dataType + "\t\t`column:\"" + object.Name + "\"`"
+		defaultVal := ""
+		if strings.ToLower(object.Default.String) != "null" {
+			if object.Default.String == "0" && object.IsNullable == "YES" {
+				defaultVal = ""
+			} else {
+				defaultVal = object.Default.String
+			}
+		}
+		string1 += "\n\t" + uppercaseFirst(object.Name) + "\t\t" + dataType + "\t\t`column:\"" + object.Name + "\" default:\"" + defaultVal + "\"`"
 	}
 	string1 += "\n}"
 
-	bs := `\"`
 	if len(primaryKeys) > 0 {
 		string1 += `
 
@@ -398,33 +412,26 @@ func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Save() (
 		string1 += `
 
 	values := ""
-	columns := ""`
+	columns := ""
+	new := false
+	if utils.Empty(` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0]) + `) {
+		new = true
+	}`
 
 		if len(primaryKeys) > 1 {
 			string1 += `
 
 	query := "INSERT INTO ` + table + `"`
 		} else {
-			var convertedVal string
-			switch primaryKeyTypes[0] {
-			case "int":
-				convertedVal = `strconv.Itoa(` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0]) + `)`
-			case "float64":
-				convertedVal = `strconv.FormatFloat(` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0]) + `, 'f', -1, 64)`
-			case "string":
-				convertedVal = strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0])
-			}
-
 			string1 += `
 
 	var query string
 
-	if ` + convertedVal + ` == "" {
+	if new {
 		query = "INSERT INTO ` + table + ` "
-		firstValue := getFieldValue(v.Field(0))
-		if firstValue != "null" {
+		if !utils.Empty(v.Field(0).Interface()) {
 			columns += string(objType.Field(0).Tag.Get("column"))
-			values += firstValue
+			values += utils.GetFieldValue(v.Field(0), string(objType.Field(0).Tag.Get("default")))
 		}
 	} else {
 		query = "UPDATE ` + table + ` SET "
@@ -440,35 +447,25 @@ func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Save() (
 	for i := 0; i < v.NumField(); i++ {`
 		}
 		string1 += `
-		value := getFieldValue(v.Field(i))`
+		fieldVal := utils.GetFieldValue(v.Field(i), string(objType.Field(i).Tag.Get("default")))`
 
 		if len(primaryKeys) == 1 {
-			var convertedVal string
-			switch primaryKeyTypes[0] {
-			case "int":
-				convertedVal = `strconv.Itoa(` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0]) + `)`
-			case "float64":
-				convertedVal = `strconv.FormatFloat(` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0]) + `, 'f', -1, 64)`
-			case "string":
-				convertedVal = strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0])
-			}
-
 			string1 += `
 
-		if ` + convertedVal + ` == "" {
-			if value != "null" {
+		if new {
+			if fieldVal != "null" {
 				if i > 1 {
 					columns += ","
 					values += ","
 				}
 				columns += string(objType.Field(i).Tag.Get("column"))
-				values += value
+				values += fieldVal
 			}
 		} else {
 			if i > 1 {
 				query += ", "
 			}
-			query += string(objType.Field(i).Tag.Get("column")) + " = " + value
+			query += string(objType.Field(i).Tag.Get("column")) + " = " + fieldVal
 		}
 	}`
 		} else {
@@ -515,18 +512,8 @@ func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Save() (
 		}
 
 		if len(primaryKeys) == 1 {
-			var convertedVal string
-			switch primaryKeyTypes[0] {
-			case "int":
-				convertedVal = `strconv.Itoa(` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0]) + `)`
-			case "float64":
-				convertedVal = `strconv.FormatFloat(` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0]) + `, 'f', -1, 64)`
-			case "string":
-				convertedVal = strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0])
-			}
-
 			string1 += `
-	if ` + convertedVal + ` == "" {
+	if new {
 		query += "(" + columns + ") VALUES (" + values + ")"
 	} else {
 		query += " WHERE` + whereStr + `
@@ -536,66 +523,30 @@ func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Save() (
 	query += " (" + columns + ") VALUES(" + values + ") ON DUPLICATE KEY UPDATE` + whereStr2
 		}
 
+		if len(primaryKeys) > 1 {
+			string1 += `
+
+			return Exec(query)`
+		} else {
+			var insertIdStr string
+			switch primaryKeyTypes[0] {
+			case "string":
+				insertIdStr = "strconv.FormatInt(id, 10)"
+			default:
+				insertIdStr = `int(id)`
+			}
+
+			string1 += `
+
+	res, err := Exec(query)
+	if err == nil && new {
+		id, _ := res.LastInsertId()
+		` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0]) + ` = ` + insertIdStr + `
+	}
+	return res, err`
+		}
+
 		string1 += `
-
-	con := connection.Get()
-	result, err := con.Exec(query)
-	if err != nil {
-		logger.HandleError(err)
-	}
-
-	return result, err
-}
-
-//Serves as a global 'toString()' function getting each property's string
-//representation so we can include it in the database query
-func getFieldValue(field reflect.Value) string {
-	var value string
-
-	switch t := field.Interface().(type) {
-	case string:
-		value = t
-	case int:
-		value = strconv.Itoa(t)
-	case int64:
-		value = strconv.FormatInt(t, 10)
-	case float64:
-		value = strconv.FormatFloat(t, 'f', -1, 64)
-	case bool:
-		if t {
-			value = "1"
-		} else {
-			value = "0"
-		}
-	case time.Time:
-		value = t.Format(date.DEFAULT_FORMAT)
-	case sql.NullString:
-		value = t.String
-	case sql.NullInt64:
-		if t.Int64 == 0 {
-			value = ""
-		} else {
-			value = strconv.FormatInt(t.Int64, 10)
-		}
-	case sql.NullFloat64:
-		value = strconv.FormatFloat(t.Float64, 'f', -1, 64)
-	case sql.NullBool:
-		if t.Bool {
-			value = "1"
-		} else {
-			value = "0"
-		}
-	case date.NullTime:
-		value = t.Time.Format(date.DEFAULT_FORMAT)
-	}
-
-	if value == "" {
-		value = "null"
-	} else {
-                value = "\"" + strings.Replace(value, ` + "`\"`, " + "`" + bs + "`, -1) + " + `"\""
-	}
-
-	return value
 }`
 
 		string1 += `
@@ -909,6 +860,207 @@ func ExampleExec() {
 	return nil
 }
 
+//Builds utils file
+func buildUtilsPackage() error {
+	filePath := GOPATH + "/src/utils/utils.go"
+	if !exists(GOPATH + "/src/utils") {
+		err = CreateDirectory(GOPATH + "/src/utils")
+		if err != nil {
+			return err
+		}
+	}
+
+	if !exists(filePath) {
+
+		bs := `\"`
+		contents := `package utils
+
+import (
+	"reflect"
+	"time"
+	"database/sql"
+	"date"
+	"strings"
+	"strconv"
+)
+
+//Serves as a global 'toString()' function getting each property's string
+//representation so we can include it in the database query
+func GetFieldValue(field reflect.Value, defaultVal string) string {
+	var val string
+
+	switch t := field.Interface().(type) {
+	case string:
+		if !Empty(t) {
+			val = t
+		} else {
+			val = defaultVal
+		}
+	case int:
+		if !Empty(t) {
+			val = strconv.Itoa(t)
+		} else {
+			val = defaultVal
+		}
+	case int64:
+		if !Empty(t) {
+			val = strconv.FormatInt(t, 10)
+		} else {
+			val = defaultVal
+		}
+	case float64:
+		if !Empty(t) {
+			val = strconv.FormatFloat(t, 'f', -1, 64)
+		} else {
+			val = defaultVal
+		}
+	case bool:
+		if !Empty(t) {
+			val = "1"
+		} else {
+			val = defaultVal
+		}
+	case time.Time:
+		if !Empty(t) {
+			val = t.Format(date.DEFAULT_FORMAT)
+		} else {
+			val = defaultVal
+		}
+	case sql.NullString:
+		if !Empty(t.String) {
+			val = t.String
+		} else {
+			val = defaultVal
+		}
+	case sql.NullInt64:
+		if !Empty(t.Int64) {
+			val = strconv.FormatInt(t.Int64, 10)
+		} else {
+			val = defaultVal
+		}
+	case sql.NullFloat64:
+		if !Empty(t.Float64) {
+			val = strconv.FormatFloat(t.Float64, 'f', -1, 64)
+		} else {
+			val = defaultVal
+		}
+	case sql.NullBool:
+		if !Empty(t.Bool) {
+			val = "1"
+		} else {
+			val = defaultVal
+		}
+	case date.NullTime:
+		if !Empty(t.Time) {
+			val = t.Time.Format(date.DEFAULT_FORMAT)
+		} else {
+			val = defaultVal
+		}
+	}
+
+	if val != "" {
+		val = "\"" + strings.Replace(val, ` + "`\"`, " + "`" + bs + "`, -1) + " + `"\""
+	} else {
+                val = "null"
+	}
+
+	return val
+}
+
+//Determine whether or not an object is empty
+func Empty(val interface{}) bool {
+	empty := true
+	switch val.(type) {
+	case string, int, int64, float64, bool, time.Time:
+		empty = isEmpty(val)
+	default:
+		v := reflect.ValueOf(val).Elem()
+		if v.String() == "<invalid Value>" {
+			return true
+		}
+		for i := 0; i < v.NumField(); i++ {
+			var value interface{}
+			field := reflect.Value(v.Field(i))
+
+			switch field.Interface().(type) {
+			case string:
+				value = field.String()
+			case int, int64:
+				value = field.Int()
+			case float64:
+				value = field.Float()
+			case bool:
+				value = field.Bool()
+			case time.Time:
+				value = field.Interface()
+			case sql.NullString:
+				value = field.Field(0).String()
+			case sql.NullInt64:
+				value = field.Field(0).Int()
+			case sql.NullFloat64:
+				value = field.Field(0).Float()
+			case sql.NullBool:
+				value = field.Field(0).Bool()
+			case date.NullTime:
+				value = field.Field(0).Interface()
+			default:
+				value = field.Interface()
+			}
+
+			if !isEmpty(value) {
+				empty = false
+				break
+			}
+		}
+	}
+	return empty
+}
+
+func isEmpty(val interface{}) bool {
+	empty := false
+	switch v := val.(type) {
+	case string:
+		if v == "" {
+			empty = true
+		}
+	case int:
+		if v == 0 {
+			empty = true
+		}
+	case int64:
+		if int(int64(v)) == 0 {
+			empty = true
+		}
+	case float64:
+		if int(float64(v)) == 0 {
+			empty = true
+		}
+	case bool:
+		if v == false {
+			empty = true
+		}
+	case time.Time:
+		if v.String() == "0001-01-01 00:00:00 +0000 UTC" {
+			empty = true
+		}
+	}
+	return empty
+}`
+
+		err = writeFile(filePath, contents, false)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err := runCommand("go fmt " + filePath)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 //Builds main connection package for serving up all database connections
 //with a shared connection pool
 func buildConnectionPackage(host string, database string) error {
@@ -1028,6 +1180,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"time"
 )
 
 var datetime string
@@ -1055,13 +1208,12 @@ func setVars() {
 	method = pathArgs[1]
 }
 
-func HandleError(e interface{}) {
+func HandleError(err error) {
 	setVars()
-
-	if e == sql.ErrNoRows {
+	if err == sql.ErrNoRows {
 		//handle queries with no results
 	} else {
-		errorStr := fmt.Sprintf("%s %s(%s.%s):%d - %s", datetime, file, class, method, line, e.Error())
+		errorStr := fmt.Sprintf("%s %s(%s.%s):%d - %s", datetime, file, class, method, line, err.Error())
 		log.Fatalln(errorStr)
 	}
 }`
