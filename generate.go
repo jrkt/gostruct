@@ -411,7 +411,7 @@ type ` + uppercaseFirst(table) + "Obj struct {"
 	}
 	if importDate {
 		importString += `
-		"utils/date"`
+		"date"`
 	}
 
 	bs := "`"
@@ -436,7 +436,7 @@ func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Save() (
 			updateStr := ""
 			query := "INSERT INTO ` + table + `"
 			for i := 0; i < v.NumField(); i++ {
-				args = append(args, value.GetFieldValue(v.Field(i), objType.Field(i).Tag.Get("default")))
+				args = append(args, utils.GetFieldValue(v.Field(i), objType.Field(i).Tag.Get("default")))
 				column := string(objType.Field(i).Tag.Get("column"))
 				columnArr = append(columnArr, "` + bs + `"+column+"` + bs + `")
 				q = append(q, "?")
@@ -467,7 +467,7 @@ func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Save() (
 
 			string1 += `
 			newRecord := false
-			if value.Empty(` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0]) + `) {
+			if utils.Empty(` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0]) + `) {
 				newRecord = true
 			}
 
@@ -562,12 +562,12 @@ func ReadAll(order string) ([]*` + uppercaseFirst(table) + `Obj, error) {
 //
 //Accepts a query string, and an order string
 func ReadByQuery(query string, args ...interface{}) ([]*` + uppercaseFirst(table) + `Obj, error) {
-	connection := DB.GetConnection()
+	con := connection.Get()
 	objects := make([]*` + uppercaseFirst(table) + `Obj, 0)
 	query = strings.Replace(query, "'", "\"", -1)
-	rows, err := connection.Query(query, args...)
+	rows, err := con.Query(query, args...)
 	if err != nil {
-		Logger.HandleError(Logger.ERROR_TYPE_CODE_ALERT, err)
+		logger.HandleError(err)
 		return objects, err
 	} else {
 		for rows.Next() {
@@ -579,7 +579,7 @@ func ReadByQuery(query string, args ...interface{}) ([]*` + uppercaseFirst(table
 		if len(objects) == 0 {
 			return objects, sql.ErrNoRows
 		} else if err != nil && err != sql.ErrNoRows {
-			Logger.HandleError(Logger.ERROR_TYPE_CODE_ALERT, err)
+			logger.HandleError(err)
 			return objects, err
 		}
 		rows.Close()
@@ -594,11 +594,11 @@ func ReadByQuery(query string, args ...interface{}) ([]*` + uppercaseFirst(table
 func ReadOneByQuery(query string, args ...interface{}) (*` + uppercaseFirst(table) + `Obj, error) {
 	var ` + strings.ToLower(table) + ` ` + uppercaseFirst(table) + `Obj
 
-	con := DB.GetConnection()
+	con := connection.Get()
 	query = strings.Replace(query, "'", "\"", -1)
 	err := con.QueryRow(query, args...).Scan(&` + strings.ToLower(table) + `.` + uppercaseFirst(objects[0].Name) + string2 + `)
 	if err != nil && err != sql.ErrNoRows {
-		Logger.HandleError(Logger.ERROR_TYPE_CODE_ALERT, err)
+		logger.HandleError(err)
 	}
 
 	return &` + strings.ToLower(table) + `, err
@@ -606,10 +606,10 @@ func ReadOneByQuery(query string, args ...interface{}) (*` + uppercaseFirst(tabl
 
 //Method for executing UPDATE queries
 func Exec(query string, args ...interface{}) (sql.Result, error) {
-	con := DB.GetConnection()
+	con := connection.Get()
 	result, err := con.Exec(query, args...)
 	if err != nil {
-		Logger.HandleError(Logger.ERROR_TYPE_CODE_ALERT, err)
+		logger.HandleError(err)
 	}
 
 	return result, err
