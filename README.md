@@ -130,8 +130,6 @@ func main() {
 ```
 # CRUX_User.go - sample file
 ```go
-//The User package serves as the base structure for the User table
-//
 //Package User contains base methods and CRUD functionality to
 //interact with the User table in the main database
 package User
@@ -139,143 +137,68 @@ package User
 import (
 	"connection"
 	"database/sql"
-	"date"
 	"logger"
 	"reflect"
-	"strconv"
 	"strings"
-	"time"
+	"utils"
+	"utils/date"
 )
 
 //UserObj is the structure of the home table
 //
 //This contains all columns that exist in the database
 type UserObj struct {
-	Id              int           `column:"id"`
-	Name            string        `column:"name"`
-	Email           string        `column:"email"`
-	Income          float64       `column:"income"`
-	IsActive        bool          `column:"isActive"`
-	SignupDate      time.Time     `column:"signupDate"`
-	TerminationDate date.NullTime `column:"terminationDate"`
+	Id              int           `column:"id" default:""`
+	Name            string        `column:"name" default:""`
+	Email           string        `column:"email" default:""`
+	Income          float64       `column:"income" default:"0"`
+	IsActive        bool          `column:"isActive" default:"1"`
+	SignupDate      date.NullTime `column:"signupDate" default:""`
+	TerminationDate date.NullTime `column:"terminationDate" default:""`
 }
 
-//Save accepts a UserObj pointer and
-//applies any updates needed to the record in the database
+//Save accepts a UserObj pointer
+//
+//Turns each value into it's string representation
+//so we can save it to the database
 func (user *UserObj) Save() (sql.Result, error) {
 	v := reflect.ValueOf(user).Elem()
 	objType := v.Type()
 
-	values := ""
-	columns := ""
+	columnArr := make([]string, 0)
+	args := make([]interface{}, 0)
+	q := make([]string, 0)
 
-	var query string
-
-	if strconv.Itoa(user.Id) == "" {
-		query = "INSERT INTO User "
-		firstValue := getFieldValue(v.Field(0))
-		if firstValue != "null" {
-			columns += string(objType.Field(0).Tag.Get("column"))
-			values += firstValue
+	updateStr := ""
+	query := "INSERT INTO User"
+	for i := 0; i < v.NumField(); i++ {
+		args = append(args, value.GetFieldValue(v.Field(i), objType.Field(i).Tag.Get("default")))
+		column := string(objType.Field(i).Tag.Get("column"))
+		columnArr = append(columnArr, "`"+column+"`")
+		q = append(q, "?")
+		if i > 0 {
+			updateStr += ", "
 		}
-	} else {
-		query = "UPDATE User SET "
+		updateStr += "`" + column + "` = ?"
+	}
+	query += " (" + strings.Join(columnArr, ", ") + ") VALUES(" + strings.Join(q, ", ") + ") ON DUPLICATE KEY UPDATE" + updateStr
+	newArgs := append(args, args...)
+	newRecord := false
+	if value.Empty(user.Id) {
+		newRecord = true
 	}
 
-	for i := 1; i < v.NumField(); i++ {
-		value := getFieldValue(v.Field(i))
-
-		if strconv.Itoa(user.Id) == "" {
-			if value != "null" {
-				if i > 1 {
-					columns += ","
-					values += ","
-				}
-				columns += string(objType.Field(i).Tag.Get("column"))
-				values += value
-			}
-		} else {
-			if i > 1 {
-				query += ", "
-			}
-			query += string(objType.Field(i).Tag.Get("column")) + " = " + value
-		}
+	res, err := Exec(query, newArgs...)
+	if err == nil && newRecord {
+		id, _ := res.LastInsertId()
+		user.Id = int(id)
 	}
-	if strconv.Itoa(user.Id) == "" {
-		query += "(" + columns + ") VALUES (" + values + ")"
-	} else {
-		query += " WHERE id = \"" + strconv.Itoa(user.Id) + "\""
-	}
-
-	con := connection.Get()
-	result, err := con.Exec(query)
-	if err != nil {
-		logger.HandleError(err)
-	}
-
-	return result, err
-}
-
-//Serves as a global 'toString()' function getting each property's string
-//representation so we can include it in the database query
-func getFieldValue(field reflect.Value) string {
-	var value string
-
-	switch t := field.Interface().(type) {
-	case string:
-		value = t
-	case int:
-		value = strconv.Itoa(t)
-	case int64:
-		value = strconv.FormatInt(t, 10)
-	case float64:
-		value = strconv.FormatFloat(t, 'f', -1, 64)
-	case bool:
-		if t {
-			value = "1"
-		} else {
-			value = "0"
-		}
-	case time.Time:
-		value = t.Format(date.DEFAULT_FORMAT)
-	case sql.NullString:
-		value = t.String
-	case sql.NullInt64:
-		if t.Int64 == 0 {
-			value = ""
-		} else {
-			value = strconv.FormatInt(t.Int64, 10)
-		}
-	case sql.NullFloat64:
-		value = strconv.FormatFloat(t.Float64, 'f', -1, 64)
-	case sql.NullBool:
-		if t.Bool {
-			value = "1"
-		} else {
-			value = "0"
-		}
-	case date.NullTime:
-		value = t.Time.Format(date.DEFAULT_FORMAT)
-	}
-
-	if value == "" {
-		value = "null"
-	} else {
-		value = "\"" + strings.Replace(value, `"`, `\"`, -1) + "\""
-	}
-
-	return value
+	return res, err
 }
 
 //Deletes record from database
 func (user *UserObj) Delete() (sql.Result, error) {
-	con := connection.Get()
-	result, err := con.Exec("DELETE FROM User WHERE id = ?", user.Id)
-	if err != nil {
-		logger.HandleError(err)
-	}
-
-	return result, err
+	return Exec("DELETE FROM User WHERE id = ?", user.Id)
 }
 
 //Returns a single object as pointer
@@ -283,7 +206,7 @@ func ReadById(id int) (*UserObj, error) {
 	return ReadOneByQuery("SELECT * FROM User WHERE id = ?", id)
 }
 
-//Returns all records in the table as a slice of UserObj pointers
+//Returns all records in the table
 func ReadAll(order string) ([]*UserObj, error) {
 	query := "SELECT * FROM User"
 	if order != "" {
@@ -296,12 +219,12 @@ func ReadAll(order string) ([]*UserObj, error) {
 //
 //Accepts a query string, and an order string
 func ReadByQuery(query string, args ...interface{}) ([]*UserObj, error) {
-	con := connection.Get()
+	connection := DB.GetConnection()
 	objects := make([]*UserObj, 0)
 	query = strings.Replace(query, "'", "\"", -1)
-	rows, err := con.Query(query, args...)
-	if err != nil && err != sql.ErrNoRows {
-		logger.HandleError(err)
+	rows, err := connection.Query(query, args...)
+	if err != nil {
+		Logger.HandleError(Logger.ERROR_TYPE_CODE_ALERT, err)
 		return objects, err
 	} else {
 		for rows.Next() {
@@ -310,11 +233,11 @@ func ReadByQuery(query string, args ...interface{}) ([]*UserObj, error) {
 			objects = append(objects, &user)
 		}
 		err = rows.Err()
-		if err != nil && err != sql.ErrNoRows {
-			logger.HandleError(err)
-			return objects, err
-		} else if len(objects) == 0 {
+		if len(objects) == 0 {
 			return objects, sql.ErrNoRows
+		} else if err != nil && err != sql.ErrNoRows {
+			Logger.HandleError(Logger.ERROR_TYPE_CODE_ALERT, err)
+			return objects, err
 		}
 		rows.Close()
 	}
@@ -327,11 +250,12 @@ func ReadByQuery(query string, args ...interface{}) ([]*UserObj, error) {
 //Serves as the LIMIT 1
 func ReadOneByQuery(query string, args ...interface{}) (*UserObj, error) {
 	var user UserObj
-	con := connection.Get()
+
+	con := DB.GetConnection()
 	query = strings.Replace(query, "'", "\"", -1)
 	err := con.QueryRow(query, args...).Scan(&user.Id, &user.Name, &user.Email, &user.Income, &user.IsActive, &user.SignupDate, &user.TerminationDate)
 	if err != nil && err != sql.ErrNoRows {
-		logger.HandleError(err)
+		Logger.HandleError(Logger.ERROR_TYPE_CODE_ALERT, err)
 	}
 
 	return &user, err
@@ -339,10 +263,10 @@ func ReadOneByQuery(query string, args ...interface{}) (*UserObj, error) {
 
 //Method for executing UPDATE queries
 func Exec(query string, args ...interface{}) (sql.Result, error) {
-	con := connection.Get()
+	con := DB.GetConnection()
 	result, err := con.Exec(query, args...)
 	if err != nil {
-		logger.HandleError(err)
+		Logger.HandleError(Logger.ERROR_TYPE_CODE_ALERT, err)
 	}
 
 	return result, err

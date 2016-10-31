@@ -253,9 +253,8 @@ func buildCruxFile(objects []TableObj, table string, database string) error {
 	dir := GOPATH + "/src/models/" + uppercaseFirst(table) + "/"
 
 	var usedColumns []UsedColumn
-	initialString := `//The ` + uppercaseFirst(table) + ` package serves as the base structure for the ` + table + ` table
-//
-//Package ` + uppercaseFirst(table) + ` contains base methods and CRUD functionality to
+	initialString := `//Package ` + uppercaseFirst(table) + ` serves as the base structure for the ` + table + ` table
+//and contains base methods and CRUD functionality to
 //interact with the ` + table + ` table in the ` + database + ` database
 package ` + uppercaseFirst(table)
 	importString := `
@@ -263,11 +262,9 @@ package ` + uppercaseFirst(table)
 import (
 	"database/sql"
 	"strings"
-	"date"
 	"connection"
 	"logger"
 	"reflect"
-	"strconv"
 	"utils"`
 
 	string1 := `
@@ -282,6 +279,11 @@ type ` + uppercaseFirst(table) + "Obj struct {"
 	primaryKeys := []string{}
 	primaryKeyTypes := []string{}
 
+	importTime := false
+	importDate := false
+
+	questionMarks := make([]string, 0)
+
 	Loop:
 	for i := 0; i < len(objects); i++ {
 		object := objects[i]
@@ -291,6 +293,7 @@ type ` + uppercaseFirst(table) + "Obj struct {"
 			}
 		}
 		usedColumns = append(usedColumns, UsedColumn{Name: object.Name})
+		questionMarks = append(questionMarks, "?")
 
 		isBool := true
 		var dataType string
@@ -344,8 +347,10 @@ type ` + uppercaseFirst(table) + "Obj struct {"
 		case "date", "datetime", "timestamp":
 			isBool = false
 			if object.IsNullable == "NO" {
+				importTime = true
 				dataType = "time.Time"
 			} else {
+				importDate = true
 				dataType = "date.NullTime"
 			}
 		default:
@@ -400,166 +405,98 @@ type ` + uppercaseFirst(table) + "Obj struct {"
 	}
 	string1 += "\n}"
 
+	if importTime {
+		importString += `
+		"time"`
+	}
+	if importDate {
+		importString += `
+		"utils/date"`
+	}
+
+	bs := "`"
+
 	if len(primaryKeys) > 0 {
 		string1 += `
 
-//Save accepts a ` + uppercaseFirst(table) + `Obj pointer and
-//applies any updates needed to the record in the database
+//Save accepts a ` + uppercaseFirst(table) + `Obj pointer
+//
+//Turns each value into it's string representation
+//so we can save it to the database
 func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Save() (sql.Result, error) {
 	v := reflect.ValueOf(` + strings.ToLower(table) + `).Elem()
 	objType := v.Type()`
 
 		string1 += `
 
-	values := ""
-	columns := ""
-	new := false
-	if utils.Empty(` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0]) + `) {
-		new = true
-	}`
+			columnArr := make([]string, 0)
+			args := make([]interface{}, 0)
+			q := make([]string, 0)
 
-		if len(primaryKeys) > 1 {
-			string1 += `
-
-	query := "INSERT INTO ` + table + `"`
-		} else {
-			string1 += `
-
-	var query string
-
-	if new {
-		query = "INSERT INTO ` + table + ` "
-		if !utils.Empty(v.Field(0).Interface()) {
-			columns += string(objType.Field(0).Tag.Get("column"))
-			values += utils.GetFieldValue(v.Field(0), string(objType.Field(0).Tag.Get("default")))
-		}
-	} else {
-		query = "UPDATE ` + table + ` SET "
-	}`
-		}
-		if len(primaryKeys) == 1 {
-			string1 += `
-
-	for i := 1; i < v.NumField(); i++ {`
-		} else {
-			string1 += `
-
-	for i := 0; i < v.NumField(); i++ {`
-		}
-		string1 += `
-		fieldVal := utils.GetFieldValue(v.Field(i), string(objType.Field(i).Tag.Get("default")))`
-
-		if len(primaryKeys) == 1 {
-			string1 += `
-
-		if new {
-			if fieldVal != "null" {
-				if i > 1 {
-					columns += ","
-					values += ","
+			updateStr := ""
+			query := "INSERT INTO ` + table + `"
+			for i := 0; i < v.NumField(); i++ {
+				args = append(args, value.GetFieldValue(v.Field(i), objType.Field(i).Tag.Get("default")))
+				column := string(objType.Field(i).Tag.Get("column"))
+				columnArr = append(columnArr, "` + bs + `"+column+"` + bs + `")
+				q = append(q, "?")
+				if i > 0 {
+					updateStr += ", "
 				}
-				columns += string(objType.Field(i).Tag.Get("column"))
-				values += fieldVal
-			}
-		} else {
-			if i > 1 {
-				query += ", "
-			}
-			query += string(objType.Field(i).Tag.Get("column")) + " = " + fieldVal
-		}
-	}`
-		} else {
-			string1 += `
+				updateStr += "` + bs + `" + column + "` + bs + ` = ?"
+			}`
 
-		if i > 0 {
-			columns += ", "
-			values += ", "
-		}
-		`
-			string1 += "columns += \"`\" + string(objType.Field(i).Tag.Get(\"column\")) + \"`\""
-			string1 += `
-		values += value
-	}`
-		}
-
-		whereStr, whereStr2, whereStrQuery, whereStrQueryValues := "", "", "", ""
-		for k := range primaryKeys {
-			if k > 0 {
-				whereStr += " AND"
-				whereStrQuery += " AND"
-				whereStr2 += ","
-				whereStrQueryValues += ","
-			}
-			var convertedVal string
-			switch primaryKeyTypes[k] {
-			case "int":
-				convertedVal = `strconv.Itoa(` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[k]) + `)`
-			case "float64":
-				convertedVal = `strconv.FormatFloat(` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[k]) + `, 'f', -1, 64)`
-			case "string":
-				convertedVal = strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[k])
-			}
-
-			if k == len(primaryKeys) - 1 {
-				whereStr += ` ` + primaryKeys[k] + ` = \"" + ` + convertedVal + ` + "\""`
-				whereStr2 += ` ` + primaryKeys[k] + ` = \"" + ` + convertedVal + ` + "\""`
-			} else {
-				whereStr += ` ` + primaryKeys[k] + ` = \"" + ` + convertedVal + ` + "\"`
-				whereStr2 += ` ` + primaryKeys[k] + ` = \"" + ` + convertedVal + ` + "\"`
-			}
-			whereStrQuery += ` ` + primaryKeys[k] + ` = ?`
-			whereStrQueryValues += ` ` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[k])
-		}
-
-		if len(primaryKeys) == 1 {
-			string1 += `
-	if new {
-		query += "(" + columns + ") VALUES (" + values + ")"
-	} else {
-		query += " WHERE` + whereStr + `
-	}`
-		} else {
-			string1 += `
-	query += " (" + columns + ") VALUES(" + values + ") ON DUPLICATE KEY UPDATE` + whereStr2
-		}
+		string1 += `
+			query += " (" + strings.Join(columnArr, ", ") + ") VALUES(" + strings.Join(q, ", ") + ") ON DUPLICATE KEY UPDATE" + updateStr
+			newArgs := append(args, args...)`
 
 		if len(primaryKeys) > 1 {
 			string1 += `
 
-			return Exec(query)`
+			return Exec(query, newArgs...)`
 		} else {
 			var insertIdStr string
 			switch primaryKeyTypes[0] {
 			case "string":
 				insertIdStr = "strconv.FormatInt(id, 10)"
+				importString += `
+				"strconv"`
 			default:
 				insertIdStr = `int(id)`
 			}
 
 			string1 += `
+			newRecord := false
+			if value.Empty(` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0]) + `) {
+				newRecord = true
+			}
 
-	res, err := Exec(query)
-	if err == nil && new {
-		id, _ := res.LastInsertId()
-		` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0]) + ` = ` + insertIdStr + `
-	}
-	return res, err`
+			res, err := Exec(query, newArgs...)
+			if err == nil && newRecord {
+				id, _ := res.LastInsertId()
+				` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0]) + ` = ` + insertIdStr + `
+			}
+			return res, err`
 		}
 
 		string1 += `
 }`
 
+		whereStrQuery, whereStrQueryValues := "", ""
+		for k := range primaryKeys {
+			if k > 0 {
+				whereStrQuery += " AND"
+				whereStrQueryValues += ","
+			}
+			whereStrQuery += ` ` + primaryKeys[k] + ` = ?`
+			whereStrQueryValues += ` ` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[k])
+		}
+
 		string1 += `
 
 //Deletes record from database
 func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Delete() (sql.Result, error) {
-	con := connection.Get()
-	result, err := con.Exec("DELETE FROM ` + table + ` WHERE` + whereStrQuery + `", ` + whereStrQueryValues + `)
-	if err != nil {
-		logger.HandleError(err)
-	}
-
-	return result, err
+	return Exec("DELETE FROM ` + table + ` WHERE` + whereStrQuery + `", ` + whereStrQueryValues + `)
 }
 `
 		paramStr, whereStr, whereStrValues := "", "", ""
@@ -601,7 +538,6 @@ func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Delete()
 			whereStrValues += " " + param
 		}
 
-		//create ReadById method
 		string1 += `
 //Returns a single object as pointer
 func ReadById(` + paramStr + `) (*` + uppercaseFirst(table) + `Obj, error) {
@@ -611,7 +547,7 @@ func ReadById(` + paramStr + `) (*` + uppercaseFirst(table) + `Obj, error) {
 
 	string1 += `
 
-//Returns all records in the table as a slice of ` + uppercaseFirst(table) + `Obj pointers
+//Returns all records in the table
 func ReadAll(order string) ([]*` + uppercaseFirst(table) + `Obj, error) {
 	query := "SELECT * FROM ` + table + `"
 	if order != "" {
@@ -626,12 +562,12 @@ func ReadAll(order string) ([]*` + uppercaseFirst(table) + `Obj, error) {
 //
 //Accepts a query string, and an order string
 func ReadByQuery(query string, args ...interface{}) ([]*` + uppercaseFirst(table) + `Obj, error) {
-	con := connection.Get()
+	connection := DB.GetConnection()
 	objects := make([]*` + uppercaseFirst(table) + `Obj, 0)
 	query = strings.Replace(query, "'", "\"", -1)
-	rows, err := con.Query(query, args...)
-	if err != nil && err != sql.ErrNoRows {
-		logger.HandleError(err)
+	rows, err := connection.Query(query, args...)
+	if err != nil {
+		Logger.HandleError(Logger.ERROR_TYPE_CODE_ALERT, err)
 		return objects, err
 	} else {
 		for rows.Next() {
@@ -640,11 +576,11 @@ func ReadByQuery(query string, args ...interface{}) ([]*` + uppercaseFirst(table
 			objects = append(objects, &` + strings.ToLower(table) + `)
 		}
 		err = rows.Err()
-		if err != nil && err != sql.ErrNoRows {
-			logger.HandleError(err)
-			return objects, err
-		} else if len(objects) == 0 {
+		if len(objects) == 0 {
 			return objects, sql.ErrNoRows
+		} else if err != nil && err != sql.ErrNoRows {
+			Logger.HandleError(Logger.ERROR_TYPE_CODE_ALERT, err)
+			return objects, err
 		}
 		rows.Close()
 	}
@@ -657,11 +593,12 @@ func ReadByQuery(query string, args ...interface{}) ([]*` + uppercaseFirst(table
 //Serves as the LIMIT 1
 func ReadOneByQuery(query string, args ...interface{}) (*` + uppercaseFirst(table) + `Obj, error) {
 	var ` + strings.ToLower(table) + ` ` + uppercaseFirst(table) + `Obj
-	con := connection.Get()
+
+	con := DB.GetConnection()
 	query = strings.Replace(query, "'", "\"", -1)
 	err := con.QueryRow(query, args...).Scan(&` + strings.ToLower(table) + `.` + uppercaseFirst(objects[0].Name) + string2 + `)
 	if err != nil && err != sql.ErrNoRows {
-		logger.HandleError(err)
+		Logger.HandleError(Logger.ERROR_TYPE_CODE_ALERT, err)
 	}
 
 	return &` + strings.ToLower(table) + `, err
@@ -669,10 +606,10 @@ func ReadOneByQuery(query string, args ...interface{}) (*` + uppercaseFirst(tabl
 
 //Method for executing UPDATE queries
 func Exec(query string, args ...interface{}) (sql.Result, error) {
-	con := connection.Get()
+	con := DB.GetConnection()
 	result, err := con.Exec(query, args...)
 	if err != nil {
-		logger.HandleError(err)
+		Logger.HandleError(Logger.ERROR_TYPE_CODE_ALERT, err)
 	}
 
 	return result, err
