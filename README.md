@@ -6,7 +6,7 @@ This is a library to auto-generate models with packages, structs, and basic meth
     go get github.com/go-sql-driver/mysql
     go get github.com/jonathankentstevens/gostruct
 
-Replace the {username} and {password} constants in gostruct.go to the credentials of your database. Then create a generate.go file with the following contents:
+Create a generate.go file with the following contents:
 
 ```go
 package main
@@ -18,7 +18,10 @@ import (
 )
 
 func main() {
-    err := gostruct.Generate()
+    gs := new(gostruct.Gostruct)
+    gs.SetUsername("user")
+    gs.SetPassword("pass")
+    err := gs.Generate()
     if err != nil {
         log.Fatalln(err)
     }

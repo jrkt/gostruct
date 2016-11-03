@@ -5,15 +5,16 @@ import (
 	"errors"
 )
 
-const DB_USERNAME = "root";
-const DB_PASSWORD = "Jstevens120)";
-
-type Table struct {
-	Name string
+type Gostruct struct {
+	DB_Username string
+	DB_Password string
 }
 
+var DB_USERNAME string
+var DB_PASSWORD string
+
 //Generate table model for mysql
-func Generate() error {
+func (gs *Gostruct) Generate() error {
 	var err error
 
 	table := flag.String("table", "", "Table")
@@ -40,4 +41,20 @@ func Generate() error {
 	}
 	
 	return nil
+}
+
+func (gs *Gostruct) SetUsername(username string) {
+	gs.DB_Username = username
+}
+
+func (gs *Gostruct) Username() string {
+	return gs.DB_Username
+}
+
+func (gs *Gostruct) SetPassword(password string) {
+	gs.DB_Password = password
+}
+
+func (gs *Gostruct) Password() string {
+	return gs.DB_Password
 }
