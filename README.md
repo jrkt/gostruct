@@ -241,7 +241,10 @@ func ReadByQuery(query string, args ...interface{}) ([]*UserObj, error) {
 	} else {
 		for rows.Next() {
 			var user UserObj
-			rows.Scan(&user.Id, &user.Name, &user.Email, &user.Income, &user.IsActive, &user.SignupDate, &user.TerminationDate)
+			err = rows.Scan(&user.Id, &user.Name, &user.Email, &user.Income, &user.IsActive, &user.SignupDate, &user.TerminationDate)
+			if err != nil {
+                return objects, err
+            }
 			objects = append(objects, &user)
 		}
 		err = rows.Err()

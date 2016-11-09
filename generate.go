@@ -572,7 +572,10 @@ func ReadByQuery(query string, args ...interface{}) ([]*` + uppercaseFirst(table
 	} else {
 		for rows.Next() {
 			var ` + strings.ToLower(table) + ` ` + uppercaseFirst(table) + `Obj
-			rows.Scan(&` + strings.ToLower(table) + `.` + uppercaseFirst(objects[0].Name) + string2 + `)
+			err = rows.Scan(&` + strings.ToLower(table) + `.` + uppercaseFirst(objects[0].Name) + string2 + `)
+			if err != nil {
+				return objects, err
+			}
 			objects = append(objects, &` + strings.ToLower(table) + `)
 		}
 		err = rows.Err()
