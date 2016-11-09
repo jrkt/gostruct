@@ -6,7 +6,7 @@ This is a library to auto-generate models with packages, structs, and basic meth
     go get github.com/go-sql-driver/mysql
     go get github.com/jonathankentstevens/gostruct
 
-Create a generate.go file with the following contents:
+Create a generate.go file with the following contents (including your db username/password):
 
 ```go
 package main
@@ -19,8 +19,8 @@ import (
 
 func main() {
     gs := new(gostruct.Gostruct)
-    gs.SetUsername("user")
-    gs.SetPassword("pass")
+    gs.Username = "<db_user>"
+    gs.Password = "<db_pass>"
     err := gs.Generate()
     if err != nil {
         log.Fatalln(err)
@@ -30,9 +30,9 @@ func main() {
     
 Then, run:
 
-    go run generate.go -table User -database main -host localhost
+    go run generate.go -table User -db main -host localhost
     
-A package with a struct of the table and several methods to handle common requests will be created in the $GOPATH/src/models/{table} directory. The files that are created, for a 'User' model (for example) would be: CRUX_User.go (containing the main CRUX methods and common methods such as ReadById, ReadAll, ReadOneByQuery, ReadByQuery, and Exec), DAO_User.go (this will hold any custom methods used to return User object(s)), BO_User.go (this contains methods to be called on the User object itself), a User_test.go to serve as a base for your unit testing and an examples_test.go with auto-generated example methods for godoc readability. In addition, it will generate a connection package to share a connection between all your models to prevent multiple open database connections, a logger package to handle any errors, and a date package to implement a "sql.NullTime"-like  struct type for null date values in any MySQL result set.
+A package with a struct of the table and several methods to handle common requests will be created in the $GOPATH/src/models/{table} directory. The files that are created, for a 'User' model (for example) would be: CRUX_User.go (containing the main CRUX methods and common methods such as ReadById, ReadAll, ReadOneByQuery, ReadByQuery, and Exec), DAO_User.go (this will hold any custom methods used to return User object(s)), BO_User.go (this contains methods to be called on the User object itself), a User_test.go to serve as a base for your unit testing and an examples_test.go with auto-generated example methods for godoc readability. In addition, it will generate a connection package to share a connection between all your models to prevent multiple open database connections and a date package to implement a "sql.NullTime"-like struct type for null date values in any MySQL result set.
 
 # flags 
 
@@ -40,7 +40,7 @@ table
     
     MySQL database table
     
-database
+db
     
     Name of the MySQL database
     
@@ -102,10 +102,10 @@ Usage:
 ```go
 func main() {
 	users, err := User.ReadAllActive("Name ASC")
-	if err == nil {
-		//handle users
-		fmt.Println(users)
+	if err != nil {
+		//handle error
 	}
+	//handle users
 }
 ```
 # BO_User.go - sample method to include
@@ -135,29 +135,31 @@ func main() {
 ```go
 //Package User contains base methods and CRUD functionality to
 //interact with the User table in the main database
+//Package User serves as the base structure for the User table
+//and contains base methods and CRUD functionality to
+//interact with the User table in the main database
 package User
 
 import (
 	"connection"
 	"database/sql"
-	"logger"
+	"date"
 	"reflect"
 	"strings"
 	"utils"
-	"utils/date"
 )
 
 //UserObj is the structure of the home table
 //
 //This contains all columns that exist in the database
 type UserObj struct {
-	Id              int           `column:"id" default:""`
-	Name            string        `column:"name" default:""`
-	Email           string        `column:"email" default:""`
-	Income          float64       `column:"income" default:"0"`
-	IsActive        bool          `column:"isActive" default:"1"`
-	SignupDate      date.NullTime `column:"signupDate" default:""`
-	TerminationDate date.NullTime `column:"terminationDate" default:""`
+	Id              int           `column:"id" default:"" type:"int(10) unsigned" key:"PRI" extra:"auto_increment"`
+	Name            string        `column:"name" default:"" type:"varchar(150)" key:"" extra:""`
+	Email           string        `column:"email" default:"" type:"varchar(250)" key:"" extra:""`
+	Income          float64       `column:"income" default:"0" type:"decimal(10,0)" key:"" extra:""`
+	IsActive        bool          `column:"isActive" default:"1" type:"tinyint(1)" key:"" extra:""`
+	SignupDate      date.NullTime `column:"signupDate" default:"" type:"datetime" key:"" extra:""`
+	TerminationDate date.NullTime `column:"terminationDate" default:"" type:"datetime" key:"" extra:""`
 }
 
 //Save accepts a UserObj pointer
@@ -175,19 +177,27 @@ func (user *UserObj) Save() (sql.Result, error) {
 	updateStr := ""
 	query := "INSERT INTO User"
 	for i := 0; i < v.NumField(); i++ {
-		args = append(args, value.GetFieldValue(v.Field(i), objType.Field(i).Tag.Get("default")))
+		if string(objType.Field(i).Tag.Get("key")) == "PRI" {
+			continue
+		}
+		val, err := utils.ValidateField(v.Field(i), objType.Field(i))
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, val)
 		column := string(objType.Field(i).Tag.Get("column"))
 		columnArr = append(columnArr, "`"+column+"`")
 		q = append(q, "?")
-		if i > 0 {
+		if i > 0 && updateStr != "" {
 			updateStr += ", "
 		}
 		updateStr += "`" + column + "` = ?"
 	}
-	query += " (" + strings.Join(columnArr, ", ") + ") VALUES(" + strings.Join(q, ", ") + ") ON DUPLICATE KEY UPDATE" + updateStr
+
+	query += " (" + strings.Join(columnArr, ", ") + ") VALUES (" + strings.Join(q, ", ") + ") ON DUPLICATE KEY UPDATE " + updateStr
 	newArgs := append(args, args...)
 	newRecord := false
-	if value.Empty(user.Id) {
+	if utils.Empty(user.Id) {
 		newRecord = true
 	}
 
@@ -222,12 +232,11 @@ func ReadAll(order string) ([]*UserObj, error) {
 //
 //Accepts a query string, and an order string
 func ReadByQuery(query string, args ...interface{}) ([]*UserObj, error) {
-	connection := DB.GetConnection()
+	con := connection.Get()
 	objects := make([]*UserObj, 0)
 	query = strings.Replace(query, "'", "\"", -1)
-	rows, err := connection.Query(query, args...)
+	rows, err := con.Query(query, args...)
 	if err != nil {
-		Logger.HandleError(Logger.ERROR_TYPE_CODE_ALERT, err)
 		return objects, err
 	} else {
 		for rows.Next() {
@@ -239,7 +248,6 @@ func ReadByQuery(query string, args ...interface{}) ([]*UserObj, error) {
 		if len(objects) == 0 {
 			return objects, sql.ErrNoRows
 		} else if err != nil && err != sql.ErrNoRows {
-			Logger.HandleError(Logger.ERROR_TYPE_CODE_ALERT, err)
 			return objects, err
 		}
 		rows.Close()
@@ -254,25 +262,17 @@ func ReadByQuery(query string, args ...interface{}) ([]*UserObj, error) {
 func ReadOneByQuery(query string, args ...interface{}) (*UserObj, error) {
 	var user UserObj
 
-	con := DB.GetConnection()
+	con := connection.Get()
 	query = strings.Replace(query, "'", "\"", -1)
 	err := con.QueryRow(query, args...).Scan(&user.Id, &user.Name, &user.Email, &user.Income, &user.IsActive, &user.SignupDate, &user.TerminationDate)
-	if err != nil && err != sql.ErrNoRows {
-		Logger.HandleError(Logger.ERROR_TYPE_CODE_ALERT, err)
-	}
 
 	return &user, err
 }
 
 //Method for executing UPDATE queries
 func Exec(query string, args ...interface{}) (sql.Result, error) {
-	con := DB.GetConnection()
-	result, err := con.Exec(query, args...)
-	if err != nil {
-		Logger.HandleError(Logger.ERROR_TYPE_CODE_ALERT, err)
-	}
-
-	return result, err
+	con := connection.Get()
+	return con.Exec(query, args...)
 }
 ```
 
