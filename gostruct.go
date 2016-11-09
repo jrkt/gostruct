@@ -6,55 +6,53 @@ import (
 )
 
 type Gostruct struct {
-	DB_Username string
-	DB_Password string
+	Table       string
+	Database    string
+	Host        string
+	Port        string
+	Username string
+	Password string
 }
-
-var DB_USERNAME string
-var DB_PASSWORD string
 
 //Generate table model for mysql
 func (gs *Gostruct) Generate() error {
 	var err error
 
 	table := flag.String("table", "", "Table")
-	database := flag.String("database", "", "Database")
-	host := flag.String("host", "", "Server")
-	port := flag.String("port", "", "Port")
+	db := flag.String("db", "", "Database")
+	host := flag.String("host", "", "DB Host")
+	port := flag.String("port", "", "DB Port (MySQL 3306 is default)")
 	all := flag.String("all", "", "Run for All Tables")
 	flag.Parse()
 
+	gs.Table = *table
+	gs.Database = *db
+	gs.Host = *host
+	gs.SetPort(*port)
+
 	if *all == "true" {
-		err = RunAll(*database, *host, *port)
+		err = gs.RunAll()
 		if err != nil {
 			return err
 		}
 	} else {
-		if (*table == "" && *all != "true") || *database == "" || *host == "" {
+		if (*table == "" && *all != "true") || *db == "" || *host == "" {
 			return errors.New("You must include the 'table', 'database', and 'host' flags")
 		} else {
-			err = Run(*table, *database, *host, *port)
+			err = gs.Run(*table)
 			if err != nil {
 				return err
 			}
 		}
 	}
-	
+
 	return nil
 }
 
-func (gs *Gostruct) SetUsername(username string) {
-	gs.DB_Username = username
+func (gs *Gostruct) SetPort(port string) {
+	if port == "" {
+		port = "3306"
+	}
+	gs.Port = port
 }
 
-func (gs *Gostruct) Username() string {
-	return gs.DB_Username
-}
-
-func (gs *Gostruct) SetPassword(password string) {
-	gs.DB_Password = password
-}
-
-func (gs *Gostruct) Password() string {
-	return gs.DB_Password
-}

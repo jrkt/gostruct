@@ -1,7 +1,7 @@
 //Package gostruct is an ORM that generates a golang package based on a MySQL database table including a DAO, BO, CRUX, test, and example file
 //
 //The CRUX file provides all basic CRUD functionality to handle any objects of the table. The test file is a skeleton file
-//ready to use for unit testing. THe example file is populated with sample methods aiding in clear godocs.
+//ready to use for unit testing.
 package gostruct
 
 import (
@@ -11,6 +11,8 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"fmt"
+	"utils/str"
 )
 
 //TableObj is the result set returned from the MySQL information_schema that
@@ -22,6 +24,7 @@ type TableObj struct {
 	DataType   string
 	ColumnType string
 	Default    sql.NullString
+	Extra      sql.NullString
 }
 
 type UsedColumn struct {
@@ -30,6 +33,10 @@ type UsedColumn struct {
 
 type UniqueValues struct {
 	Value sql.NullString
+}
+
+type Table struct {
+	Name string
 }
 
 //Globals variables
@@ -50,42 +57,27 @@ func init() {
 }
 
 //Generates a package for a single table
-func Run(table string, database string, host string, port string) error {
-	// if empty set port to MySQL default port
-	if port == "" {
-		port = "3306"
-	}
-
+func (gs *Gostruct) Run(table string) error {
 	//make sure models dir exists
 	if !exists(GOPATH + "/src/models") {
-		err = CreateDirectory(GOPATH + "/src/models")
+		err = gs.CreateDirectory(GOPATH + "/src/models")
 		if err != nil {
 			return err
 		}
 	}
 
-	err = buildConnectionPackage(host, database)
-	if err != nil {
-		return err
-	}
-
-	err = buildDatePackage()
-	if err != nil {
-		return err
-	}
-
-	err = buildLoggerPackage()
+	err = gs.buildConnectionPackage()
 	if err != nil {
 		return err
 	}
 
 	//handle utils file
-	err = buildUtilsPackage()
+	err = gs.buildUtilsPackage()
 	if err != nil {
 		return err
 	}
 
-	err = handleTable(table, database, host, port)
+	err = gs.handleTable(table)
 	if err != nil {
 		return err
 	}
@@ -94,18 +86,12 @@ func Run(table string, database string, host string, port string) error {
 }
 
 //Generates packages for all tables in a specific database and host
-func RunAll(database string, host string, port string) error {
-	var portStr string
-	if port == "" {
-		portStr = "3306"
-	} else {
-		portStr = host
-	}
-	connection, err := sql.Open("mysql", DB_USERNAME + ":" + DB_PASSWORD + "@tcp(" + host + ":" + portStr + ")/" + database)
+func (gs *Gostruct) RunAll() error {
+	connection, err := sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", gs.Username, gs.Password, gs.Host, gs.Port, gs.Database))
 	if err != nil {
 		panic(err)
 	} else {
-		rows, err := connection.Query("SELECT DISTINCT(TABLE_NAME) FROM `information_schema`.`COLUMNS` WHERE `TABLE_SCHEMA` LIKE ?", database)
+		rows, err := connection.Query("SELECT DISTINCT(TABLE_NAME) FROM `information_schema`.`COLUMNS` WHERE `TABLE_SCHEMA` LIKE ?", gs.Database)
 		if err != nil {
 			panic(err)
 		} else {
@@ -113,7 +99,7 @@ func RunAll(database string, host string, port string) error {
 				var table Table
 				rows.Scan(&table.Name)
 
-				err = Run(table.Name, database, host, port)
+				err = gs.Run(table.Name)
 				if err != nil {
 					return err
 				}
@@ -125,7 +111,7 @@ func RunAll(database string, host string, port string) error {
 }
 
 //Creates directory and sets permissions to 0777
-func CreateDirectory(path string) error {
+func (gs *Gostruct) CreateDirectory(path string) error {
 	err = os.Mkdir(path, 0777)
 	if err != nil {
 		return err
@@ -140,8 +126,8 @@ func CreateDirectory(path string) error {
 	return nil
 }
 
-//Main hanlder method for tables
-func handleTable(table string, database string, host string, port string) error {
+//Main handler method for tables
+func (gs *Gostruct) handleTable(table string) error {
 	if inArray(table, tablesDone) {
 		return nil
 	} else {
@@ -150,13 +136,13 @@ func handleTable(table string, database string, host string, port string) error 
 
 	log.Println("Generating Models for: " + table)
 
-	con, err = sql.Open("mysql", DB_USERNAME + ":" + DB_PASSWORD + "@tcp(" + host + ":" + port + ")/" + database)
+	con, err = sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", gs.Username, gs.Password, gs.Host, gs.Port, gs.Database))
 
 	if err != nil {
 		return err
 	}
 
-	rows1, err := con.Query("SELECT column_name, is_nullable, column_key, data_type, column_type, column_default FROM information_schema.columns WHERE table_name = ? AND table_schema = ?", table, database)
+	rows1, err := con.Query("SELECT column_name, is_nullable, column_key, data_type, column_type, column_default, extra FROM information_schema.columns WHERE table_name = ? AND table_schema = ?", table, gs.Database)
 
 	var object TableObj
 	var objects []TableObj = make([]TableObj, 0)
@@ -167,7 +153,7 @@ func handleTable(table string, database string, host string, port string) error 
 	} else {
 		cntPK := 0
 		for rows1.Next() {
-			rows1.Scan(&object.Name, &object.IsNullable, &object.Key, &object.DataType, &object.ColumnType, &object.Default)
+			rows1.Scan(&object.Name, &object.IsNullable, &object.Key, &object.DataType, &object.ColumnType, &object.Default, &object.Extra)
 			objects = append(objects, object)
 			if object.Key == "PRI" {
 				cntPK++
@@ -209,31 +195,37 @@ func handleTable(table string, database string, host string, port string) error 
 		}
 
 		//handle CRUX file
-		err = buildCruxFile(objects, table, database)
+		err = gs.buildCruxFile(objects, table)
 		if err != nil {
 			return err
 		}
 
 		//handle DAO file
-		err = buildDaoFile(table)
+		err = gs.buildDaoFile(table)
 		if err != nil {
 			return err
 		}
 
 		//handle BO file
-		err = buildBoFile(table)
+		err = gs.buildBoFile(table)
 		if err != nil {
 			return err
 		}
 
 		//handle Test file
-		err = buildTestFile(table)
+		err = gs.buildTestFile(table)
 		if err != nil {
 			return err
 		}
 
 		//handle Example file
-		err = buildExamplesFile(table)
+		err = gs.buildExamplesFile(table)
+		if err != nil {
+			return err
+		}
+
+		//handle Date file
+		err = gs.buildDatePackage()
 		if err != nil {
 			return err
 		}
@@ -243,7 +235,7 @@ func handleTable(table string, database string, host string, port string) error 
 }
 
 //Builds CRUX_{table}.go file with main struct and CRUD functionality
-func buildCruxFile(objects []TableObj, table string, database string) error {
+func (gs *Gostruct) buildCruxFile(objects []TableObj, table string) error {
 	exampleIdStr = ""
 	exampleColumn = ""
 	exampleColumnStr = ""
@@ -255,7 +247,7 @@ func buildCruxFile(objects []TableObj, table string, database string) error {
 	var usedColumns []UsedColumn
 	initialString := `//Package ` + uppercaseFirst(table) + ` serves as the base structure for the ` + table + ` table
 //and contains base methods and CRUD functionality to
-//interact with the ` + table + ` table in the ` + database + ` database
+//interact with the ` + table + ` table in the ` + gs.Database + ` database
 package ` + uppercaseFirst(table)
 	importString := `
 
@@ -263,7 +255,6 @@ import (
 	"database/sql"
 	"strings"
 	"connection"
-	"logger"
 	"reflect"
 	"utils"`
 
@@ -306,7 +297,7 @@ type ` + uppercaseFirst(table) + "Obj struct {"
 				dataType = "sql.NullInt64"
 			}
 		case "tinyint":
-			rows, err := con.Query("SELECT DISTINCT(`" + object.Name + "`) FROM " + database + "." + table)
+			rows, err := con.Query("SELECT DISTINCT(`" + object.Name + "`) FROM " + gs.Database + "." + table)
 			if err != nil {
 				return err
 			} else {
@@ -401,7 +392,7 @@ type ` + uppercaseFirst(table) + "Obj struct {"
 				defaultVal = object.Default.String
 			}
 		}
-		string1 += "\n\t" + uppercaseFirst(object.Name) + "\t\t" + dataType + "\t\t`column:\"" + object.Name + "\" default:\"" + defaultVal + "\"`"
+		string1 += "\n\t" + str.UppercaseFirst(object.Name) + "\t\t" + dataType + "\t\t`column:\"" + object.Name + "\" default:\"" + defaultVal + "\" type:\"" + object.ColumnType + "\" key:\"" + object.Key + "\" extra:\"" + object.Extra.String + "\"`"
 	}
 	string1 += "\n}"
 
@@ -419,41 +410,51 @@ type ` + uppercaseFirst(table) + "Obj struct {"
 	if len(primaryKeys) > 0 {
 		string1 += `
 
-//Save accepts a ` + uppercaseFirst(table) + `Obj pointer
+//Save accepts a ` + str.UppercaseFirst(table) + `Obj pointer
 //
 //Turns each value into it's string representation
 //so we can save it to the database
-func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Save() (sql.Result, error) {
+func (` + strings.ToLower(table) + ` *` + str.UppercaseFirst(table) + `Obj) Save() (sql.Result, error) {
 	v := reflect.ValueOf(` + strings.ToLower(table) + `).Elem()
-	objType := v.Type()`
+	objType := v.Type()
+
+	columnArr := make([]string, 0)
+	args := make([]interface{}, 0)
+	q := make([]string, 0)
+
+	updateStr := ""
+	query := "INSERT INTO ` + table + `"
+	for i := 0; i < v.NumField(); i++ {`
+
+		if len(primaryKeys) == 1 {
+			string1 += `
+		if string(objType.Field(i).Tag.Get("key")) == "PRI" {
+			continue
+		}`
+		}
 
 		string1 += `
+		val, err := utils.ValidateField(v.Field(i), objType.Field(i))
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, val)
+		column := string(objType.Field(i).Tag.Get("column"))
+		columnArr = append(columnArr, "` + bs + `"+column+"` + bs + `")
+		q = append(q, "?")
+		if i > 0 && updateStr != "" {
+			updateStr += ", "
+		}
+		updateStr += "` + bs + `" + column + "` + bs + ` = ?"
+	}
 
-			columnArr := make([]string, 0)
-			args := make([]interface{}, 0)
-			q := make([]string, 0)
-
-			updateStr := ""
-			query := "INSERT INTO ` + table + `"
-			for i := 0; i < v.NumField(); i++ {
-				args = append(args, utils.GetFieldValue(v.Field(i), objType.Field(i).Tag.Get("default")))
-				column := string(objType.Field(i).Tag.Get("column"))
-				columnArr = append(columnArr, "` + bs + `"+column+"` + bs + `")
-				q = append(q, "?")
-				if i > 0 {
-					updateStr += ", "
-				}
-				updateStr += "` + bs + `" + column + "` + bs + ` = ?"
-			}`
-
-		string1 += `
-			query += " (" + strings.Join(columnArr, ", ") + ") VALUES(" + strings.Join(q, ", ") + ") ON DUPLICATE KEY UPDATE" + updateStr
-			newArgs := append(args, args...)`
+	query += " (" + strings.Join(columnArr, ", ") + ") VALUES (" + strings.Join(q, ", ") + ") ON DUPLICATE KEY UPDATE " + updateStr
+	newArgs := append(args, args...)`
 
 		if len(primaryKeys) > 1 {
 			string1 += `
 
-			return Exec(query, newArgs...)`
+	return Exec(query, newArgs...)`
 		} else {
 			var insertIdStr string
 			switch primaryKeyTypes[0] {
@@ -466,17 +467,17 @@ func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Save() (
 			}
 
 			string1 += `
-			newRecord := false
-			if utils.Empty(` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0]) + `) {
-				newRecord = true
-			}
+	newRecord := false
+	if utils.Empty(` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0]) + `) {
+		newRecord = true
+	}
 
-			res, err := Exec(query, newArgs...)
-			if err == nil && newRecord {
-				id, _ := res.LastInsertId()
-				` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0]) + ` = ` + insertIdStr + `
-			}
-			return res, err`
+	res, err := Exec(query, newArgs...)
+	if err == nil && newRecord {
+		id, _ := res.LastInsertId()
+		` + strings.ToLower(table) + `.` + uppercaseFirst(primaryKeys[0]) + ` = ` + insertIdStr + `
+	}
+	return res, err`
 		}
 
 		string1 += `
@@ -567,7 +568,6 @@ func ReadByQuery(query string, args ...interface{}) ([]*` + uppercaseFirst(table
 	query = strings.Replace(query, "'", "\"", -1)
 	rows, err := con.Query(query, args...)
 	if err != nil {
-		logger.HandleError(err)
 		return objects, err
 	} else {
 		for rows.Next() {
@@ -579,7 +579,6 @@ func ReadByQuery(query string, args ...interface{}) ([]*` + uppercaseFirst(table
 		if len(objects) == 0 {
 			return objects, sql.ErrNoRows
 		} else if err != nil && err != sql.ErrNoRows {
-			logger.HandleError(err)
 			return objects, err
 		}
 		rows.Close()
@@ -597,9 +596,6 @@ func ReadOneByQuery(query string, args ...interface{}) (*` + uppercaseFirst(tabl
 	con := connection.Get()
 	query = strings.Replace(query, "'", "\"", -1)
 	err := con.QueryRow(query, args...).Scan(&` + strings.ToLower(table) + `.` + uppercaseFirst(objects[0].Name) + string2 + `)
-	if err != nil && err != sql.ErrNoRows {
-		logger.HandleError(err)
-	}
 
 	return &` + strings.ToLower(table) + `, err
 }
@@ -607,12 +603,7 @@ func ReadOneByQuery(query string, args ...interface{}) (*` + uppercaseFirst(tabl
 //Method for executing UPDATE queries
 func Exec(query string, args ...interface{}) (sql.Result, error) {
 	con := connection.Get()
-	result, err := con.Exec(query, args...)
-	if err != nil {
-		logger.HandleError(err)
-	}
-
-	return result, err
+	return con.Exec(query, args...)
 }`
 
 	importString += "\n)"
@@ -633,7 +624,7 @@ func Exec(query string, args ...interface{}) (sql.Result, error) {
 }
 
 //Builds DAO_{table}.go file for custom Data Access Object methods
-func buildDaoFile(table string) error {
+func (gs *Gostruct) buildDaoFile(table string) error {
 	tableNaming := uppercaseFirst(table)
 	dir := GOPATH + "/src/models/" + uppercaseFirst(table) + "/"
 	daoFilePath := dir + "DAO_" + tableNaming + ".go"
@@ -655,7 +646,7 @@ func buildDaoFile(table string) error {
 }
 
 //Builds BO_{table}.go file for custom Business Object methods
-func buildBoFile(table string) error {
+func (gs *Gostruct) buildBoFile(table string) error {
 	tableNaming := uppercaseFirst(table)
 	dir := GOPATH + "/src/models/" + uppercaseFirst(table) + "/"
 	boFilePath := dir + "BO_" + tableNaming + ".go"
@@ -677,7 +668,7 @@ func buildBoFile(table string) error {
 }
 
 //Builds {table}_test.go file
-func buildTestFile(table string) error {
+func (gs *Gostruct) buildTestFile(table string) error {
 	tableNaming := uppercaseFirst(table)
 	dir := GOPATH + "/src/models/" + uppercaseFirst(table) + "/"
 	testFilePath := dir + tableNaming + "_test.go"
@@ -707,7 +698,7 @@ func buildTestFile(table string) error {
 }
 
 //Builds {table}_test.go file
-func buildExamplesFile(table string) error {
+func (gs *Gostruct) buildExamplesFile(table string) error {
 	tableNaming := uppercaseFirst(table)
 	dir := GOPATH + "/src/models/" + uppercaseFirst(table) + "/"
 	examplesFilePath := dir + "examples_test.go"
@@ -798,110 +789,77 @@ func ExampleExec() {
 }
 
 //Builds utils file
-func buildUtilsPackage() error {
+func (gs *Gostruct) buildUtilsPackage() error {
 	filePath := GOPATH + "/src/utils/utils.go"
 	if !exists(GOPATH + "/src/utils") {
-		err = CreateDirectory(GOPATH + "/src/utils")
+		err = gs.CreateDirectory(GOPATH + "/src/utils")
 		if err != nil {
 			return err
 		}
 	}
 
 	if !exists(filePath) {
-
-		bs := `\"`
 		contents := `package utils
 
 import (
-	"reflect"
-	"time"
 	"database/sql"
 	"date"
+	"reflect"
+	"time"
+	"utils/value"
 	"strings"
-	"strconv"
+	"utils/str"
+	"errors"
 )
 
-//Serves as a global 'toString()' function getting each property's string
-//representation so we can include it in the database query
-func GetFieldValue(field reflect.Value, defaultVal string) string {
-	var val string
-
-	switch t := field.Interface().(type) {
-	case string:
-		if !Empty(t) {
-			val = t
-		} else {
-			val = defaultVal
-		}
-	case int:
-		if !Empty(t) {
-			val = strconv.Itoa(t)
-		} else {
-			val = defaultVal
-		}
-	case int64:
-		if !Empty(t) {
-			val = strconv.FormatInt(t, 10)
-		} else {
-			val = defaultVal
-		}
-	case float64:
-		if !Empty(t) {
-			val = strconv.FormatFloat(t, 'f', -1, 64)
-		} else {
-			val = defaultVal
-		}
-	case bool:
-		if !Empty(t) {
-			val = "1"
-		} else {
-			val = defaultVal
-		}
-	case time.Time:
-		if !Empty(t) {
-			val = t.Format(date.DEFAULT_FORMAT)
-		} else {
-			val = defaultVal
-		}
-	case sql.NullString:
-		if !Empty(t.String) {
-			val = t.String
-		} else {
-			val = defaultVal
-		}
-	case sql.NullInt64:
-		if !Empty(t.Int64) {
-			val = strconv.FormatInt(t.Int64, 10)
-		} else {
-			val = defaultVal
-		}
-	case sql.NullFloat64:
-		if !Empty(t.Float64) {
-			val = strconv.FormatFloat(t.Float64, 'f', -1, 64)
-		} else {
-			val = defaultVal
-		}
-	case sql.NullBool:
-		if !Empty(t.Bool) {
-			val = "1"
-		} else {
-			val = defaultVal
-		}
-	case date.NullTime:
-		if !Empty(t.Time) {
-			val = t.Time.Format(date.DEFAULT_FORMAT)
-		} else {
-			val = defaultVal
-		}
+func NewNullString(s string) sql.NullString {
+	if Empty(s) {
+		return sql.NullString{}
 	}
-
-	if val != "" {
-		val = "\"" + strings.Replace(val, ` + "`\"`, " + "`" + bs + "`, -1) + " + `"\""
-	} else {
-                val = "null"
+	return sql.NullString{
+		String: s,
+		Valid:  true,
 	}
+}
 
-	return val
+func NewNullInt(i int64) sql.NullInt64 {
+	if Empty(i) {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{
+		Int64: i,
+		Valid: true,
+	}
+}
+
+func NewNullFloat(f float64) sql.NullFloat64 {
+	if Empty(f) {
+		return sql.NullFloat64{}
+	}
+	return sql.NullFloat64{
+		Float64: f,
+		Valid:   true,
+	}
+}
+
+func NewNullBool(b bool) sql.NullBool {
+	if Empty(b) {
+		return sql.NullBool{}
+	}
+	return sql.NullBool{
+		Bool:  b,
+		Valid: true,
+	}
+}
+
+func NewNullTime(t time.Time) date.NullTime {
+	if Empty(t) {
+		return date.NullTime{}
+	}
+	return date.NullTime{
+		Time:  t,
+		Valid: true,
+	}
 }
 
 //Determine whether or not an object is empty
@@ -982,6 +940,82 @@ func isEmpty(val interface{}) bool {
 		}
 	}
 	return empty
+}
+
+//Validate field value
+func ValidateField(val reflect.Value, field reflect.StructField) (interface{}, error) {
+	if strings.Contains(string(field.Tag.Get("type")), "enum") {
+		var s string
+		switch t := val.Interface().(type) {
+		case string:
+			s = t
+		case sql.NullString:
+			s = t.String
+		}
+		vals := str.Between(string(field.Tag.Get("type")), "enum('", "')")
+		arr := strings.Split(vals, "','")
+		if !str.InArray(s, arr) {
+			return nil, errors.New("Invalid value: '" + s + "' for column: " + string(field.Tag.Get("column")) + ". Possible values are: " + strings.Join(arr, ", "))
+		}
+	}
+
+	return GetFieldValue(val, field.Tag.Get("default")), nil
+}
+
+//Returns the value from the struct field value as an interface
+func GetFieldValue(field reflect.Value, defaultVal string) interface{} {
+	var val interface{}
+
+	switch t := field.Interface().(type) {
+	case string:
+		if !value.Empty(t) {
+			val = t
+		} else {
+			val = defaultVal
+		}
+	case int:
+		if !value.Empty(t) {
+			val = t
+		} else {
+			val = defaultVal
+		}
+	case int64:
+		if !value.Empty(t) {
+			val = t
+		} else {
+			val = defaultVal
+		}
+	case float64:
+		if !value.Empty(t) {
+			val = t
+		} else {
+			val = defaultVal
+		}
+	case bool:
+		if !value.Empty(t) {
+			val = t
+		} else {
+			val = defaultVal
+		}
+	case time.Time:
+		if !value.Empty(t) {
+			val = t
+		} else {
+			val = defaultVal
+		}
+	case sql.NullString:
+		val = NewNullString(t.String)
+	case sql.NullInt64:
+		val = NewNullInt(t.Int64)
+	case sql.NullFloat64:
+		val = NewNullFloat(t.Float64)
+	case sql.NullBool:
+		val = NewNullBool(t.Bool)
+	case date.NullTime:
+		val = NewNullTime(t.Time)
+	}
+
+	return val
 }`
 
 		err = writeFile(filePath, contents, false)
@@ -1000,9 +1034,9 @@ func isEmpty(val interface{}) bool {
 
 //Builds main connection package for serving up all database connections
 //with a shared connection pool
-func buildConnectionPackage(host string, database string) error {
+func (gs *Gostruct) buildConnectionPackage() error {
 	if !exists(GOPATH + "/src/connection") {
-		err = CreateDirectory(GOPATH + "/src/connection")
+		err = gs.CreateDirectory(GOPATH + "/src/connection")
 		if err != nil {
 			return err
 		}
@@ -1028,7 +1062,7 @@ func Get() *sql.DB {
 		}
 	}
 
-	connection, err = sql.Open("mysql", "` + DB_USERNAME + `:` + DB_PASSWORD + `@tcp(` + host + `:3306)/` + database + `?parseTime=true")
+	connection, err = sql.Open("mysql", "` + gs.Username + `:` + gs.Password + `@tcp(` + gs.Host + `:3306)/` + gs.Database + `?parseTime=true")
 	if err != nil {
 		logger.HandleError(err)
 	}
@@ -1048,10 +1082,9 @@ func Get() *sql.DB {
 	return nil
 }
 
-//Builds date package to provide date.NullTime type
-func buildDatePackage() error {
+func (gs *Gostruct) buildDatePackage() error {
 	if !exists(GOPATH + "/src/date") {
-		err = CreateDirectory(GOPATH + "/src/date")
+		err = gs.CreateDirectory(GOPATH + "/src/date")
 		if err != nil {
 			return err
 		}
@@ -1091,77 +1124,6 @@ func (nt NullTime) Value() (driver.Value, error) {
 	}
 
 	_, err := runCommand("go fmt " + dateFilePath)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-//Builds base logging package that
-func buildLoggerPackage() error {
-	if !exists(GOPATH + "/src/logger") {
-		err = CreateDirectory(GOPATH + "/src/logger")
-		if err != nil {
-			return err
-		}
-	}
-
-	contents := `package logger
-
-import (
-	"database/sql"
-	"fmt"
-	"log"
-	"net"
-	"os"
-	"runtime"
-	"strings"
-	"time"
-)
-
-var datetime string
-var hostname string
-var ip string
-var line int
-var pc uintptr
-var class string
-var method string
-var file string
-
-//Method to set all variables used in all functions of logging
-func setVars() {
-	t := time.Now()
-	datetime = t.Format("2006-01-02 15:04:05")
-	hostname, _ = os.Hostname()
-	ipArr, _ := net.LookupHost(hostname)
-	if len(ipArr) == 1 {
-		ip = ipArr[0]
-	}
-	pc, file, line, _ = runtime.Caller(3)
-	path := runtime.FuncForPC(pc).Name()
-	pathArgs := strings.Split(path, ".")
-	class = pathArgs[0]
-	method = pathArgs[1]
-}
-
-func HandleError(err error) {
-	setVars()
-	if err == sql.ErrNoRows {
-		//handle queries with no results
-	} else {
-		errorStr := fmt.Sprintf("%s %s(%s.%s):%d - %s", datetime, file, class, method, line, err.Error())
-		log.Fatalln(errorStr)
-	}
-}`
-
-	loggerFilePath := GOPATH + "/src/logger/logger.go"
-	err = writeFile(loggerFilePath, contents, false)
-	if err != nil {
-		return err
-	}
-
-	_, err := runCommand("go fmt " + loggerFilePath)
 	if err != nil {
 		return err
 	}
