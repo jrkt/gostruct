@@ -12,7 +12,6 @@ import (
 	"os"
 	"strings"
 	"fmt"
-	"utils/str"
 )
 
 //TableObj is the result set returned from the MySQL information_schema that
@@ -392,7 +391,7 @@ type ` + uppercaseFirst(table) + "Obj struct {"
 				defaultVal = object.Default.String
 			}
 		}
-		string1 += "\n\t" + str.UppercaseFirst(object.Name) + "\t\t" + dataType + "\t\t`column:\"" + object.Name + "\" default:\"" + defaultVal + "\" type:\"" + object.ColumnType + "\" key:\"" + object.Key + "\" extra:\"" + object.Extra.String + "\"`"
+		string1 += "\n\t" + uppercaseFirst(object.Name) + "\t\t" + dataType + "\t\t`column:\"" + object.Name + "\" default:\"" + defaultVal + "\" type:\"" + object.ColumnType + "\" key:\"" + object.Key + "\" extra:\"" + object.Extra.String + "\"`"
 	}
 	string1 += "\n}"
 
@@ -410,11 +409,11 @@ type ` + uppercaseFirst(table) + "Obj struct {"
 	if len(primaryKeys) > 0 {
 		string1 += `
 
-//Save accepts a ` + str.UppercaseFirst(table) + `Obj pointer
+//Save accepts a ` + uppercaseFirst(table) + `Obj pointer
 //
 //Turns each value into it's string representation
 //so we can save it to the database
-func (` + strings.ToLower(table) + ` *` + str.UppercaseFirst(table) + `Obj) Save() (sql.Result, error) {
+func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Save() (sql.Result, error) {
 	v := reflect.ValueOf(` + strings.ToLower(table) + `).Elem()
 	objType := v.Type()
 
