@@ -806,12 +806,10 @@ func (gs *Gostruct) buildUtilsPackage() error {
 import (
 	"database/sql"
 	"date"
-	"reflect"
-	"time"
-	"utils/value"
-	"strings"
-	"utils/str"
 	"errors"
+	"reflect"
+	"strings"
+	"time"
 )
 
 func NewNullString(s string) sql.NullString {
@@ -954,14 +952,29 @@ func ValidateField(val reflect.Value, field reflect.StructField) (interface{}, e
 		case sql.NullString:
 			s = t.String
 		}
-		vals := str.Between(string(field.Tag.Get("type")), "enum('", "')")
+		vals := Between(string(field.Tag.Get("type")), "enum('", "')")
 		arr := strings.Split(vals, "','")
-		if !str.InArray(s, arr) {
+		if !InArray(s, arr) {
 			return nil, errors.New("Invalid value: '" + s + "' for column: " + string(field.Tag.Get("column")) + ". Possible values are: " + strings.Join(arr, ", "))
 		}
 	}
 
 	return GetFieldValue(val, field.Tag.Get("default")), nil
+}
+
+//Returns string between two specified characters/strings
+func Between(initial string, beginning string, end string) string {
+	return strings.TrimLeft(strings.TrimRight(initial, end), beginning)
+}
+
+//Determine whether or not a string is in array
+func InArray(char string, strings []string) bool {
+	for _, a := range strings {
+		if a == char {
+			return true
+		}
+	}
+	return false
 }
 
 //Returns the value from the struct field value as an interface
@@ -970,37 +983,37 @@ func GetFieldValue(field reflect.Value, defaultVal string) interface{} {
 
 	switch t := field.Interface().(type) {
 	case string:
-		if !value.Empty(t) {
+		if !Empty(t) {
 			val = t
 		} else {
 			val = defaultVal
 		}
 	case int:
-		if !value.Empty(t) {
+		if !Empty(t) {
 			val = t
 		} else {
 			val = defaultVal
 		}
 	case int64:
-		if !value.Empty(t) {
+		if !Empty(t) {
 			val = t
 		} else {
 			val = defaultVal
 		}
 	case float64:
-		if !value.Empty(t) {
+		if !Empty(t) {
 			val = t
 		} else {
 			val = defaultVal
 		}
 	case bool:
-		if !value.Empty(t) {
+		if !Empty(t) {
 			val = t
 		} else {
 			val = defaultVal
 		}
 	case time.Time:
-		if !value.Empty(t) {
+		if !Empty(t) {
 			val = t
 		} else {
 			val = defaultVal
@@ -1018,7 +1031,8 @@ func GetFieldValue(field reflect.Value, defaultVal string) interface{} {
 	}
 
 	return val
-}`
+}
+`
 
 		err = writeFile(filePath, contents, false)
 		if err != nil {
