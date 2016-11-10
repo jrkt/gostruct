@@ -423,16 +423,7 @@ func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Save() (
 
 	updateStr := ""
 	query := "INSERT INTO ` + table + `"
-	for i := 0; i < v.NumField(); i++ {`
-
-		if len(primaryKeys) == 1 {
-			string1 += `
-		if string(objType.Field(i).Tag.Get("key")) == "PRI" {
-			continue
-		}`
-		}
-
-		string1 += `
+	for i := 0; i < v.NumField(); i++ {
 		val, err := utils.ValidateField(v.Field(i), objType.Field(i))
 		if err != nil {
 			return nil, err
