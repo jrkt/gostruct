@@ -19,7 +19,7 @@ type Gostruct struct {
 func (gs *Gostruct) Generate() error {
 	var err error
 
-	tbls := flag.String("tables", "", "Table")
+	tbls := flag.String("tables", "", "Comma separated list of tables")
 	db := flag.String("db", "", "Database")
 	host := flag.String("host", "", "DB Host")
 	port := flag.String("port", "", "DB Port (MySQL 3306 is default)")
