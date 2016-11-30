@@ -417,9 +417,9 @@ func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Save() (
 	v := reflect.ValueOf(` + strings.ToLower(table) + `).Elem()
 	objType := v.Type()
 
-	columnArr := make([]string, 0)
-	args := make([]interface{}, 0)
-	q := make([]string, 0)
+	var columnArr []string
+	var args []interface{}
+	var q []string
 
 	updateStr := ""
 	query := "INSERT INTO ` + table + `"
@@ -554,12 +554,13 @@ func ReadAll(order string) ([]*` + uppercaseFirst(table) + `Obj, error) {
 //Accepts a query string, and an order string
 func ReadByQuery(query string, args ...interface{}) ([]*` + uppercaseFirst(table) + `Obj, error) {
 	con := connection.Get()
-	objects := make([]*` + uppercaseFirst(table) + `Obj, 0)
+	var objects []*` + uppercaseFirst(table) + `Obj
 	query = strings.Replace(query, "'", "\"", -1)
 	rows, err := con.Query(query, args...)
 	if err != nil {
 		return objects, err
 	} else {
+		defer rows.Close()
 		for rows.Next() {
 			var ` + strings.ToLower(table) + ` ` + uppercaseFirst(table) + `Obj
 			err = rows.Scan(&` + strings.ToLower(table) + `.` + uppercaseFirst(objects[0].Name) + string2 + `)
@@ -568,13 +569,6 @@ func ReadByQuery(query string, args ...interface{}) ([]*` + uppercaseFirst(table
 			}
 			objects = append(objects, &` + strings.ToLower(table) + `)
 		}
-		err = rows.Err()
-		if len(objects) == 0 {
-			return objects, sql.ErrNoRows
-		} else if err != nil && err != sql.ErrNoRows {
-			return objects, err
-		}
-		rows.Close()
 	}
 
 	return objects, nil

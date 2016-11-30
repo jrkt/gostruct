@@ -3,6 +3,7 @@ package gostruct
 import (
 	"flag"
 	"errors"
+	"strings"
 )
 
 type Gostruct struct {
@@ -18,14 +19,13 @@ type Gostruct struct {
 func (gs *Gostruct) Generate() error {
 	var err error
 
-	table := flag.String("table", "", "Table")
+	tbls := flag.String("tables", "", "Table")
 	db := flag.String("db", "", "Database")
 	host := flag.String("host", "", "DB Host")
 	port := flag.String("port", "", "DB Port (MySQL 3306 is default)")
 	all := flag.String("all", "", "Run for All Tables")
 	flag.Parse()
 
-	gs.Table = *table
 	gs.Database = *db
 	gs.Host = *host
 	gs.SetPort(*port)
@@ -36,13 +36,18 @@ func (gs *Gostruct) Generate() error {
 			return err
 		}
 	} else {
-		if (*table == "" && *all != "true") || *db == "" || *host == "" {
+		if (*tbls == "" && *all != "true") || *db == "" || *host == "" {
 			return errors.New("You must include the 'table', 'database', and 'host' flags")
 		} else {
-			err = gs.Run(*table)
-			if err != nil {
-				return err
+			t := strings.Replace(*tbls, " ", "", -1)
+			tables := strings.Split(t, ",")
+			for _, table := range tables {
+				err = gs.Run(table)
+				if err != nil {
+					return err
+				}
 			}
+
 		}
 	}
 
