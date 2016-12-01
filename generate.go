@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 
+	//allows pulling from information_schema database
 	_ "github.com/go-sql-driver/mysql"
 )
 
@@ -59,7 +60,7 @@ func init() {
 	GOPATH = os.Getenv("GOPATH")
 }
 
-//Generates a package for a single table
+//Run generates a package for a single table
 func (gs *Gostruct) Run(table string) error {
 	//make sure models dir exists
 	if !exists(GOPATH + "/src/models") {
@@ -88,7 +89,7 @@ func (gs *Gostruct) Run(table string) error {
 	return nil
 }
 
-//Generates packages for all tables in a specific database and host
+//RunAll generates packages for all tables in a specific database and host
 func (gs *Gostruct) RunAll() error {
 	connection, err := sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", gs.Username, gs.Password, gs.Host, gs.Port, gs.Database))
 	if err != nil {
@@ -113,7 +114,7 @@ func (gs *Gostruct) RunAll() error {
 	return nil
 }
 
-//Creates directory and sets permissions to 0777
+//CreateDirectory creates directory and sets permissions to 0777
 func (gs *Gostruct) CreateDirectory(path string) error {
 	err = os.Mkdir(path, 0777)
 	if err != nil {
@@ -133,9 +134,8 @@ func (gs *Gostruct) CreateDirectory(path string) error {
 func (gs *Gostruct) handleTable(table string) error {
 	if inArray(table, tablesDone) {
 		return nil
-	} else {
-		tablesDone = append(tablesDone, table)
 	}
+	tablesDone = append(tablesDone, table)
 
 	log.Println("Generating Models for: " + table)
 
@@ -153,85 +153,84 @@ func (gs *Gostruct) handleTable(table string) error {
 
 	if err != nil {
 		return err
-	} else {
-		cntPK := 0
-		for rows1.Next() {
-			rows1.Scan(&object.Name, &object.IsNullable, &object.Key, &object.DataType, &object.ColumnType, &object.Default, &object.Extra)
-			objects = append(objects, object)
-			if object.Key == "PRI" {
-				cntPK++
-			}
-			if cntPK > 1 && object.Key == "PRI" {
-				continue
-			}
-			columns = append(columns, object.Name)
+	}
+	cntPK := 0
+	for rows1.Next() {
+		rows1.Scan(&object.Name, &object.IsNullable, &object.Key, &object.DataType, &object.ColumnType, &object.Default, &object.Extra)
+		objects = append(objects, object)
+		if object.Key == "PRI" {
+			cntPK++
 		}
+		if cntPK > 1 && object.Key == "PRI" {
+			continue
+		}
+		columns = append(columns, object.Name)
 	}
 	defer rows1.Close()
 
 	primaryKey = ""
 	if len(objects) == 0 {
 		return errors.New("No results for table: " + table)
-	} else {
-		//get PrimaryKey
-		for i := 0; i < len(objects); i++ {
-			object := objects[i]
-			if object.Key == "PRI" {
-				primaryKey = object.Name
-				break
-			}
+	}
+
+	//get PrimaryKey
+	for i := 0; i < len(objects); i++ {
+		object := objects[i]
+		if object.Key == "PRI" {
+			primaryKey = object.Name
+			break
 		}
+	}
 
-		//create directory
-		dir := GOPATH + "/src/models/" + uppercaseFirst(table) + "/"
-		if !exists(dir) {
-			err := os.Mkdir(dir, 0777)
-			if err != nil {
-				return err
-			}
-
-			//give new directory full permissions
-			err = os.Chmod(dir, 0777)
-			if err != nil {
-				return err
-			}
-		}
-
-		//handle CRUX file
-		err = gs.buildCruxFile(objects, table)
+	//create directory
+	dir := GOPATH + "/src/models/" + uppercaseFirst(table) + "/"
+	if !exists(dir) {
+		err := os.Mkdir(dir, 0777)
 		if err != nil {
 			return err
 		}
 
-		//handle DAO file
-		err = gs.buildDaoFile(table)
+		//give new directory full permissions
+		err = os.Chmod(dir, 0777)
 		if err != nil {
 			return err
 		}
+	}
 
-		//handle BO file
-		err = gs.buildBoFile(table)
-		if err != nil {
-			return err
-		}
+	//handle CRUX file
+	err = gs.buildCruxFile(objects, table)
+	if err != nil {
+		return err
+	}
 
-		//handle Test file
-		err = gs.buildTestFile(table)
-		if err != nil {
-			return err
-		}
+	//handle DAO file
+	err = gs.buildDaoFile(table)
+	if err != nil {
+		return err
+	}
 
-		//handle Example file
-		err = gs.buildExamplesFile(table)
-		if err != nil {
-			return err
-		}
+	//handle BO file
+	err = gs.buildBoFile(table)
+	if err != nil {
+		return err
+	}
 
-		//handle Date file
-		err = gs.buildDatePackage()
-		if err != nil {
-			return err
-		}
+	//handle Test file
+	err = gs.buildTestFile(table)
+	if err != nil {
+		return err
+	}
+
+	//handle Example file
+	err = gs.buildExamplesFile(table)
+	if err != nil {
+		return err
+	}
+
+	//handle Date file
+	err = gs.buildDatePackage()
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -276,7 +275,7 @@ type ` + uppercaseFirst(table) + "Obj struct {"
 	importTime := false
 	importDate := false
 
-	questionMarks := make([]string, 0)
+	var questionMarks []string
 
 Loop:
 	for i := 0; i < len(objects); i++ {
