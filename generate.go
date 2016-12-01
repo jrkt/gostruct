@@ -302,15 +302,15 @@ Loop:
 			rows, err := con.Query("SELECT DISTINCT(`" + object.Name + "`) FROM " + gs.Database + "." + table)
 			if err != nil {
 				return err
-			} else {
-				for rows.Next() {
-					var uObj uniqueValues
-					rows.Scan(&uObj.Value)
-					if uObj.Value.String != "0" && uObj.Value.String != "1" {
-						isBool = false
-					}
+			}
+			for rows.Next() {
+				var uObj uniqueValues
+				rows.Scan(&uObj.Value)
+				if uObj.Value.String != "0" && uObj.Value.String != "1" {
+					isBool = false
 				}
 			}
+
 			if isBool {
 				if object.IsNullable == "NO" {
 					dataType = "bool"
@@ -412,7 +412,7 @@ Loop:
 	if len(primaryKeys) > 0 {
 		string1 += `
 
-//Save accepts a ` + uppercaseFirst(table) + `Obj pointer
+//Save does just that. It will save if the object key exists, otherwise it will add the record.
 //
 //Turns each value into it's string representation
 //so we can save it to the database
@@ -488,7 +488,7 @@ func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Save() (
 
 		string1 += `
 
-//Deletes record from database
+//Delete does just that
 func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Delete() (sql.Result, error) {
 	return Exec("DELETE FROM ` + table + ` WHERE` + whereStrQuery + `", ` + whereStrQueryValues + `)
 }
@@ -533,7 +533,7 @@ func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Delete()
 		}
 
 		string1 += `
-//Returns a single object as pointer
+//ReadById returns a single object as pointer
 func ReadById(` + paramStr + `) (*` + uppercaseFirst(table) + `Obj, error) {
 	return ReadOneByQuery("SELECT * FROM ` + table + ` WHERE` + whereStrQuery + `", ` + whereStrValues + `)
 }`
@@ -541,7 +541,7 @@ func ReadById(` + paramStr + `) (*` + uppercaseFirst(table) + `Obj, error) {
 
 	string1 += `
 
-//Returns all records in the table
+//ReadAll returns all records in the table
 func ReadAll(order string) ([]*` + uppercaseFirst(table) + `Obj, error) {
 	query := "SELECT * FROM ` + table + `"
 	if order != "" {
@@ -552,7 +552,7 @@ func ReadAll(order string) ([]*` + uppercaseFirst(table) + `Obj, error) {
 
 	string1 += `
 
-//Returns a slice of ` + uppercaseFirst(table) + `Obj pointers
+//ReadByQuery returns a slice of ` + uppercaseFirst(table) + `Obj pointers
 //
 //Accepts a query string, and an order string
 func ReadByQuery(query string, args ...interface{}) ([]*` + uppercaseFirst(table) + `Obj, error) {
@@ -562,22 +562,22 @@ func ReadByQuery(query string, args ...interface{}) ([]*` + uppercaseFirst(table
 	rows, err := con.Query(query, args...)
 	if err != nil {
 		return objects, err
-	} else {
-		defer rows.Close()
-		for rows.Next() {
-			var ` + strings.ToLower(table) + ` ` + uppercaseFirst(table) + `Obj
-			err = rows.Scan(&` + strings.ToLower(table) + `.` + uppercaseFirst(objects[0].Name) + string2 + `)
-			if err != nil {
-				return objects, err
-			}
-			objects = append(objects, &` + strings.ToLower(table) + `)
+	}
+
+	defer rows.Close()
+	for rows.Next() {
+		var ` + strings.ToLower(table) + ` ` + uppercaseFirst(table) + `Obj
+		err = rows.Scan(&` + strings.ToLower(table) + `.` + uppercaseFirst(objects[0].Name) + string2 + `)
+		if err != nil {
+			return objects, err
 		}
+		objects = append(objects, &` + strings.ToLower(table) + `)
 	}
 
 	return objects, nil
 }
 
-//Returns a single object as pointer
+//ReadOneByQuery returns a single object as pointer
 //
 //Serves as the LIMIT 1
 func ReadOneByQuery(query string, args ...interface{}) (*` + uppercaseFirst(table) + `Obj, error) {
@@ -590,7 +590,7 @@ func ReadOneByQuery(query string, args ...interface{}) (*` + uppercaseFirst(tabl
 	return &` + strings.ToLower(table) + `, err
 }
 
-//Method for executing UPDATE queries
+//Exec allows for executing queries
 func Exec(query string, args ...interface{}) (sql.Result, error) {
 	con := connection.Get()
 	return con.Exec(query, args...)

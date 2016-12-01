@@ -6,6 +6,7 @@ import (
 	"strings"
 )
 
+//Gostruct is the main holding object for connection information
 type Gostruct struct {
 	Table    string
 	Database string
@@ -28,7 +29,7 @@ func (gs *Gostruct) Generate() error {
 
 	gs.Database = *db
 	gs.Host = *host
-	gs.SetPort(*port)
+	gs.setPort(*port)
 
 	if *all == "true" {
 		err = gs.RunAll()
@@ -54,7 +55,7 @@ func (gs *Gostruct) Generate() error {
 	return nil
 }
 
-func (gs *Gostruct) SetPort(port string) {
+func (gs *Gostruct) setPort(port string) {
 	if port == "" {
 		port = "3306"
 	}
