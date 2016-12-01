@@ -39,16 +39,15 @@ func (gs *Gostruct) Generate() error {
 	} else {
 		if (*tbls == "" && *all != "true") || *db == "" || *host == "" {
 			return errors.New("You must include the 'table', 'database', and 'host' flags")
-		} else {
-			t := strings.Replace(*tbls, " ", "", -1)
-			tables := strings.Split(t, ",")
-			for _, table := range tables {
-				err = gs.Run(table)
-				if err != nil {
-					return err
-				}
-			}
+		}
 
+		t := strings.Replace(*tbls, " ", "", -1)
+		tables := strings.Split(t, ",")
+		for _, table := range tables {
+			err = gs.Run(table)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
