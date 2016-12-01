@@ -27,29 +27,32 @@ type TableObj struct {
 	Extra      sql.NullString
 }
 
-type UsedColumn struct {
-	Name string
-}
-
-type UniqueValues struct {
-	Value sql.NullString
-}
-
+//Table houses the name of the table
 type Table struct {
 	Name string
 }
 
+type usedColumn struct {
+	Name string
+}
+
+type uniqueValues struct {
+	Value sql.NullString
+}
+
 //Globals variables
-var err error
-var con *sql.DB
-var tables []string
-var tablesDone []string
-var primaryKey string
-var GOPATH string
-var exampleIdStr string
-var exampleColumn string
-var exampleColumnStr string
-var exampleOrderStr string
+var (
+	err              error
+	con              *sql.DB
+	tables           []string
+	tablesDone       []string
+	primaryKey       string
+	GOPATH           string
+	exampleIdStr     string
+	exampleColumn    string
+	exampleColumnStr string
+	exampleOrderStr  string
+)
 
 //initialize global GOPATH
 func init() {
@@ -244,7 +247,7 @@ func (gs *Gostruct) buildCruxFile(objects []TableObj, table string) error {
 	tableNaming := uppercaseFirst(table)
 	dir := GOPATH + "/src/models/" + uppercaseFirst(table) + "/"
 
-	var usedColumns []UsedColumn
+	var usedColumns []usedColumn
 	initialString := `//Package ` + uppercaseFirst(table) + ` serves as the base structure for the ` + table + ` table
 //and contains base methods and CRUD functionality to
 //interact with the ` + table + ` table in the ` + gs.Database + ` database
@@ -283,7 +286,7 @@ Loop:
 				continue Loop
 			}
 		}
-		usedColumns = append(usedColumns, UsedColumn{Name: object.Name})
+		usedColumns = append(usedColumns, usedColumn{Name: object.Name})
 		questionMarks = append(questionMarks, "?")
 
 		isBool := true
@@ -302,7 +305,7 @@ Loop:
 				return err
 			} else {
 				for rows.Next() {
-					var uObj UniqueValues
+					var uObj uniqueValues
 					rows.Scan(&uObj.Value)
 					if uObj.Value.String != "0" && uObj.Value.String != "1" {
 						isBool = false

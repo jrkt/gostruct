@@ -1,7 +1,8 @@
+[![Go Report Card](https://goreportcard.com/badge/github.com/jonathankentstevens/gostruct)](https://goreportcard.com/report/github.com/jonathankentstevens/gostruct)
+[![GoDoc](https://godoc.org/github.com/jonathankentstevens/gostruct?status.svg)](https://godoc.org/github.com/jonathankentstevens/gostruct)
+
 # gostruct
 This is a library to auto-generate models with packages, structs, and basic methods of accessibility for a given MySQL database table.
-
-[![GoDoc](https://godoc.org/github.com/jonathankentstevens/gostruct?status.svg)](https://godoc.org/github.com/jonathankentstevens/gostruct)
 
 # implementation
 
