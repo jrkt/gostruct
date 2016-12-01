@@ -493,7 +493,7 @@ func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Delete()
 	return Exec("DELETE FROM ` + table + ` WHERE` + whereStrQuery + `", ` + whereStrQueryValues + `)
 }
 `
-		paramStr, whereStr, whereStrValues := "", "", ""
+		paramStr, whereStrValues := "", ""
 		for k := range primaryKeys {
 			var param string
 			if primaryKeys[k] == "type" {
@@ -505,29 +505,29 @@ func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Delete()
 			}
 
 			var dataType string
-			var paramTypeStr string
+			//var paramTypeStr string
 			switch primaryKeyTypes[k] {
 			case "int":
 				dataType = "int"
-				paramTypeStr = "strconv.Itoa(" + param + ")"
+				//paramTypeStr = "strconv.Itoa(" + param + ")"
 			case "float64":
 				dataType = "float64"
-				paramTypeStr = "strconv.FormatFloat(" + param + ", 'f', -1, 64)"
+				//paramTypeStr = "strconv.FormatFloat(" + param + ", 'f', -1, 64)"
 			default:
 				dataType = "string"
-				paramTypeStr = param
+				//paramTypeStr = param
 			}
 
 			paramStr += param + " " + dataType
 			if k > 0 {
-				whereStr += " AND"
+				//whereStr += " AND"
 				whereStrValues += ","
 			}
-			if k == len(primaryKeys)-1 {
-				whereStr += ` ` + param + ` = '" + ` + paramTypeStr + ` + "'"`
-			} else {
+			if k != len(primaryKeys)-1 {
+				//whereStr += ` ` + param + ` = '" + ` + paramTypeStr + ` + "'"`
+			//} else {
 				paramStr += ", "
-				whereStr += ` ` + param + ` = '" + ` + paramTypeStr + ` + "'`
+				//whereStr += ` ` + param + ` = '" + ` + paramTypeStr + ` + "'`
 			}
 			whereStrValues += " " + param
 		}
