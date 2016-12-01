@@ -1,16 +1,16 @@
 package gostruct
 
 import (
-	"flag"
 	"errors"
+	"flag"
 	"strings"
 )
 
 type Gostruct struct {
-	Table       string
-	Database    string
-	Host        string
-	Port        string
+	Table    string
+	Database string
+	Host     string
+	Port     string
 	Username string
 	Password string
 }
@@ -60,4 +60,3 @@ func (gs *Gostruct) SetPort(port string) {
 	}
 	gs.Port = port
 }
-

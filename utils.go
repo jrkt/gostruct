@@ -1,10 +1,10 @@
 package gostruct
 
 import (
-	"os"
-	"strings"
 	"bytes"
+	"os"
 	"os/exec"
+	"strings"
 	"unicode"
 )
 

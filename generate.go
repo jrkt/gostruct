@@ -6,12 +6,13 @@ package gostruct
 
 import (
 	"database/sql"
-	_ "github.com/go-sql-driver/mysql"
-	"log"
 	"errors"
+	"fmt"
+	"log"
 	"os"
 	"strings"
-	"fmt"
+
+	_ "github.com/go-sql-driver/mysql"
 )
 
 //TableObj is the result set returned from the MySQL information_schema that
@@ -274,7 +275,7 @@ type ` + uppercaseFirst(table) + "Obj struct {"
 
 	questionMarks := make([]string, 0)
 
-	Loop:
+Loop:
 	for i := 0; i < len(objects); i++ {
 		object := objects[i]
 		for c := 0; c < len(usedColumns); c++ {
@@ -520,7 +521,7 @@ func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Delete()
 				whereStr += " AND"
 				whereStrValues += ","
 			}
-			if k == len(primaryKeys) - 1 {
+			if k == len(primaryKeys)-1 {
 				whereStr += ` ` + param + ` = '" + ` + paramTypeStr + ` + "'"`
 			} else {
 				paramStr += ", "
