@@ -525,7 +525,7 @@ func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Delete()
 			}
 			if k != len(primaryKeys)-1 {
 				//whereStr += ` ` + param + ` = '" + ` + paramTypeStr + ` + "'"`
-			//} else {
+				//} else {
 				paramStr += ", "
 				//whereStr += ` ` + param + ` = '" + ` + paramTypeStr + ` + "'`
 			}
