@@ -412,10 +412,8 @@ Loop:
 	if len(primaryKeys) > 0 {
 		string1 += `
 
-//Save does just that. It will save if the object key exists, otherwise it will add the record.
-//
-//Turns each value into it's string representation
-//so we can save it to the database
+//Save does just that. It will save if the object key exists, otherwise it will add the record
+//by running INSERT ON DUPLICATE KEY UPDATE
 func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Save() (sql.Result, error) {
 	v := reflect.ValueOf(` + strings.ToLower(table) + `).Elem()
 	objType := v.Type()
@@ -488,7 +486,7 @@ func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Save() (
 
 		string1 += `
 
-//Delete does just that
+//Delete does just that. It removes that record from the database based on the primary key.
 func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Delete() (sql.Result, error) {
 	return Exec("DELETE FROM ` + table + ` WHERE` + whereStrQuery + `", ` + whereStrQueryValues + `)
 }
@@ -533,7 +531,7 @@ func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) Delete()
 		}
 
 		string1 += `
-//ReadById returns a single object as pointer
+//ReadById returns a pointer to a(n) ` + uppercaseFirst(table) + `Obj
 func ReadById(` + paramStr + `) (*` + uppercaseFirst(table) + `Obj, error) {
 	return ReadOneByQuery("SELECT * FROM ` + table + ` WHERE` + whereStrQuery + `", ` + whereStrValues + `)
 }`
@@ -541,7 +539,7 @@ func ReadById(` + paramStr + `) (*` + uppercaseFirst(table) + `Obj, error) {
 
 	string1 += `
 
-//ReadAll returns all records in the table
+//ReadAll returns all records in the ` + uppercaseFirst(table) + ` table
 func ReadAll(order string) ([]*` + uppercaseFirst(table) + `Obj, error) {
 	query := "SELECT * FROM ` + table + `"
 	if order != "" {
@@ -552,9 +550,7 @@ func ReadAll(order string) ([]*` + uppercaseFirst(table) + `Obj, error) {
 
 	string1 += `
 
-//ReadByQuery returns a slice of ` + uppercaseFirst(table) + `Obj pointers
-//
-//Accepts a query string, and an order string
+//ReadByQuery returns an array of ` + uppercaseFirst(table) + `Obj pointers
 func ReadByQuery(query string, args ...interface{}) ([]*` + uppercaseFirst(table) + `Obj, error) {
 	con := connection.Get()
 	var objects []*` + uppercaseFirst(table) + `Obj
@@ -562,6 +558,8 @@ func ReadByQuery(query string, args ...interface{}) ([]*` + uppercaseFirst(table
 	rows, err := con.Query(query, args...)
 	if err != nil {
 		return objects, err
+	} else if rows.Err() != nil {
+		return objects, rows.Err()
 	}
 
 	defer rows.Close()
@@ -577,9 +575,7 @@ func ReadByQuery(query string, args ...interface{}) ([]*` + uppercaseFirst(table
 	return objects, nil
 }
 
-//ReadOneByQuery returns a single object as pointer
-//
-//Serves as the LIMIT 1
+//ReadOneByQuery returns a pointer to a(n) ` + uppercaseFirst(table) + `Obj
 func ReadOneByQuery(query string, args ...interface{}) (*` + uppercaseFirst(table) + `Obj, error) {
 	var ` + strings.ToLower(table) + ` ` + uppercaseFirst(table) + `Obj
 
@@ -699,22 +695,46 @@ func (gs *Gostruct) buildExamplesFile(table string) error {
 import (
 	"fmt"
 	"models/` + tableNaming + `"
+	"database/sql"
 )
 
 func Example` + tableNaming + `Obj_Save() {
+	//existing ` + strings.ToLower(table) + `
 	` + strings.ToLower(table) + `, err := ` + tableNaming + `.ReadById(` + exampleIdStr + `)
-	if err == nil {
+	if err != nil {
+		if err == sql.ErrNoRows {
+			//no results
+		} else {
+			//query or mysql error
+		}
+	} else {
 		` + strings.ToLower(table) + `.` + exampleColumnStr + `
 		_, err = ` + strings.ToLower(table) + `.Save()
 		if err != nil {
 			//Save failed
 		}
 	}
+
+	//new ` + strings.ToLower(table) + `
+	` + strings.ToLower(table) + ` = new(` + tableNaming + `.` + tableNaming + `Obj)
+	res, err := ` + strings.ToLower(table) + `.Save()
+	if err != nil {
+		//save failed
+	} else {
+		lastInsertId, err := res.LastInsertId()
+		numRowsAffected, err := res.RowsAffected()
+	}
 }
 
 func Example` + tableNaming + `Obj_Delete() {
 	` + strings.ToLower(table) + `, err := ` + tableNaming + `.ReadById(` + exampleIdStr + `)
-	if err == nil {
+	if err != nil {
+		if err == sql.ErrNoRows {
+			//no results
+		} else {
+			//query or mysql error
+		}
+	} else {
 		_, err = ` + strings.ToLower(table) + `.Delete()
 		if err != nil {
 			//Delete failed
@@ -724,9 +744,14 @@ func Example` + tableNaming + `Obj_Delete() {
 
 func ExampleReadAll() {
 	` + strings.ToLower(table) + `s, err := ` + tableNaming + `.ReadAll("` + exampleOrderStr + `")
-	if err == nil {
-		for i := range ` + strings.ToLower(table) + `s {
-			` + strings.ToLower(table) + ` := ` + strings.ToLower(table) + `s[i]
+	if err != nil {
+		if err == sql.ErrNoRows {
+			//no results
+		} else {
+			//query or mysql error
+		}
+	} else {
+		for _, user := range ` + strings.ToLower(table) + `s {
 			fmt.Println(` + strings.ToLower(table) + `)
 		}
 	}
@@ -734,7 +759,13 @@ func ExampleReadAll() {
 
 func ExampleReadById() {
 	` + strings.ToLower(table) + `, err := ` + tableNaming + `.ReadById(` + exampleIdStr + `)
-	if err == nil {
+	if err != nil {
+		if err == sql.ErrNoRows {
+			//no results
+		} else {
+			//query or mysql error
+		}
+	} else {
 		//handle ` + strings.ToLower(table) + ` object
 		fmt.Println(` + strings.ToLower(table) + `)
 	}
@@ -742,9 +773,14 @@ func ExampleReadById() {
 
 func ExampleReadByQuery() {
 	` + strings.ToLower(table) + `s, err := ` + tableNaming + `.ReadByQuery("SELECT * FROM ` + table + ` WHERE ` + exampleColumn + ` = ? ORDER BY ` + exampleOrderStr + `", "some string")
-	if err == nil {
-		for i := range ` + strings.ToLower(table) + `s {
-			` + strings.ToLower(table) + ` := ` + strings.ToLower(table) + `s[i]
+	if err != nil {
+		if err == sql.ErrNoRows {
+			//no results
+		} else {
+			//query or mysql error
+		}
+	} else {
+		for _, user := range ` + strings.ToLower(table) + `s {
 			fmt.Println(` + strings.ToLower(table) + `)
 		}
 	}
@@ -752,16 +788,25 @@ func ExampleReadByQuery() {
 
 func ExampleReadOneByQuery() {
 	` + strings.ToLower(table) + `, err := ` + tableNaming + `.ReadOneByQuery("SELECT * FROM ` + table + ` WHERE ` + exampleColumn + ` = ? ORDER BY ` + exampleOrderStr + `", "some string")
-	if err == nil {
+	if err != nil {
+		if err == sql.ErrNoRows {
+			//no results
+		} else {
+			//query or mysql error
+		}
+	} else {
 		//handle ` + strings.ToLower(table) + ` object
 		fmt.Println(` + strings.ToLower(table) + `)
 	}
 }
 
 func ExampleExec() {
-	_, err := ` + tableNaming + `.Exec("UPDATE ` + table + ` SET ` + exampleColumn + ` = ? WHERE id = ?", "some string", ` + exampleIdStr + `)
+	res, err := ` + tableNaming + `.Exec("UPDATE ` + table + ` SET ` + exampleColumn + ` = ? WHERE id = ?", "some string", ` + exampleIdStr + `)
 	if err != nil {
-		//Exec failed
+		//save failed
+	} else {
+		lastInsertId, err := res.LastInsertId()
+		numRowsAffected, err := res.RowsAffected()
 	}
 }`
 		err = writeFile(examplesFilePath, contents, false)

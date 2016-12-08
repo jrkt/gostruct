@@ -72,7 +72,9 @@ import (
 func main() {
     //retrieve existing user by id
     user, err := User.ReadById(12345)
-    if err == nil {
+    if err != nil {
+        //handle error
+    } else {
 	    user.Email = "test@email.com"
 	    user.IsActive = false
 	    user.Save()
@@ -81,7 +83,7 @@ func main() {
     //create new user
     user := new(User.UserObj)
     user.Email = "test@email.com"
-    _, err := user.Save()
+    res, err := user.Save()
     if err != nil {
     	//Save failed
     }
@@ -110,27 +112,35 @@ func main() {
 	if err != nil {
 		//handle error
 	}
+	
 	//handle users
+	for _, user := range users {
+	    
+	}
 }
 ```
 # BO_User.go - sample method to include
 ```go
-func (user *UserObj) Terminate() {
+func (user *UserObj) Terminate() error {
 	user.IsActive = false
-	user.TerminationDate.Time = time.Now()
+	user.TerminationDate.Time = time.Now().Local()
 	_, err := user.Save()
 	if err != nil {
 		//Save failed
+		return err
 	}
+	return nil
 }
 ```
 Usage:
 ```go
 func main() {
 	users, err := User.ReadAllActive("Name ASC")
-	if err == nil {
-		for i := range users {
-			user := users[i]
+	if err != nil {
+	    //read failed or no results found
+	} else {
+	    //handle users
+		for _, user := range users {
 			user.Terminate()
 		}
 	}
@@ -138,8 +148,6 @@ func main() {
 ```
 # CRUX_User.go - sample file
 ```go
-//Package User contains base methods and CRUD functionality to
-//interact with the User table in the main database
 //Package User serves as the base structure for the User table
 //and contains base methods and CRUD functionality to
 //interact with the User table in the main database
@@ -167,24 +175,19 @@ type UserObj struct {
 	TerminationDate date.NullTime `column:"terminationDate" default:"" type:"datetime" key:"" extra:""`
 }
 
-//Save accepts a UserObj pointer
-//
-//Turns each value into it's string representation
-//so we can save it to the database
+//Save does just that. It will save if the object key exists, otherwise it will add the record
+//by running INSERT ON DUPLICATE KEY UPDATE
 func (user *UserObj) Save() (sql.Result, error) {
 	v := reflect.ValueOf(user).Elem()
 	objType := v.Type()
 
-	columnArr := make([]string, 0)
-	args := make([]interface{}, 0)
-	q := make([]string, 0)
+	var columnArr []string
+	var args []interface{}
+	var q []string
 
 	updateStr := ""
 	query := "INSERT INTO User"
 	for i := 0; i < v.NumField(); i++ {
-		if string(objType.Field(i).Tag.Get("key")) == "PRI" {
-			continue
-		}
 		val, err := utils.ValidateField(v.Field(i), objType.Field(i))
 		if err != nil {
 			return nil, err
@@ -214,17 +217,17 @@ func (user *UserObj) Save() (sql.Result, error) {
 	return res, err
 }
 
-//Deletes record from database
+//Delete does just that. It removes that record from the database based on the primary key.
 func (user *UserObj) Delete() (sql.Result, error) {
 	return Exec("DELETE FROM User WHERE id = ?", user.Id)
 }
 
-//Returns a single object as pointer
+//ReadById returns a pointer to a(n) UserObj
 func ReadById(id int) (*UserObj, error) {
 	return ReadOneByQuery("SELECT * FROM User WHERE id = ?", id)
 }
 
-//Returns all records in the table
+//ReadAll returns all records in the User table
 func ReadAll(order string) ([]*UserObj, error) {
 	query := "SELECT * FROM User"
 	if order != "" {
@@ -233,40 +236,32 @@ func ReadAll(order string) ([]*UserObj, error) {
 	return ReadByQuery(query)
 }
 
-//Returns a slice of UserObj pointers
-//
-//Accepts a query string, and an order string
+//ReadByQuery returns an array of UserObj pointers
 func ReadByQuery(query string, args ...interface{}) ([]*UserObj, error) {
 	con := connection.Get()
-	objects := make([]*UserObj, 0)
+	var objects []*UserObj
 	query = strings.Replace(query, "'", "\"", -1)
 	rows, err := con.Query(query, args...)
 	if err != nil {
 		return objects, err
-	} else {
-		for rows.Next() {
-			var user UserObj
-			err = rows.Scan(&user.Id, &user.Name, &user.Email, &user.Income, &user.IsActive, &user.SignupDate, &user.TerminationDate)
-			if err != nil {
-                return objects, err
-            }
-			objects = append(objects, &user)
-		}
-		err = rows.Err()
-		if len(objects) == 0 {
-			return objects, sql.ErrNoRows
-		} else if err != nil && err != sql.ErrNoRows {
+	} else if rows.Err() != nil {
+		return objects, rows.Err()
+	}
+
+	defer rows.Close()
+	for rows.Next() {
+		var user UserObj
+		err = rows.Scan(&user.Id, &user.Name, &user.Email, &user.Income, &user.IsActive, &user.SignupDate, &user.TerminationDate)
+		if err != nil {
 			return objects, err
 		}
-		rows.Close()
+		objects = append(objects, &user)
 	}
 
 	return objects, nil
 }
 
-//Returns a single object as pointer
-//
-//Serves as the LIMIT 1
+//ReadOneByQuery returns a pointer to a(n) UserObj
 func ReadOneByQuery(query string, args ...interface{}) (*UserObj, error) {
 	var user UserObj
 
@@ -277,14 +272,15 @@ func ReadOneByQuery(query string, args ...interface{}) (*UserObj, error) {
 	return &user, err
 }
 
-//Method for executing UPDATE queries
+//Exec allows for executing queries
 func Exec(query string, args ...interface{}) (sql.Result, error) {
 	con := connection.Get()
 	return con.Exec(query, args...)
 }
+
 ```
 
-# User_test.go - sample file
+# User_test.go - sample skeleton file generated
 ```go
 package User_test
 
@@ -303,22 +299,46 @@ package User_test
 import (
 	"fmt"
 	"models/User"
+	"database/sql"
 )
 
 func ExampleUserObj_Save() {
+	//existing user
 	user, err := User.ReadById(12345)
-	if err == nil {
+	if err != nil {
+		if err == sql.ErrNoRows {
+			//no results
+		} else {
+			//query or mysql error
+		}
+	} else {
 		user.Email = "some string"
 		_, err = user.Save()
 		if err != nil {
 			//Save failed
 		}
 	}
+
+	//new user
+	user = new(User.UserObj)
+	res, err := user.Save()
+	if err != nil {
+		//save failed
+	} else {
+		lastInsertId, err := res.LastInsertId()
+		numRowsAffected, err := res.RowsAffected()
+	}
 }
 
 func ExampleUserObj_Delete() {
 	user, err := User.ReadById(12345)
-	if err == nil {
+	if err != nil {
+		if err == sql.ErrNoRows {
+			//no results
+		} else {
+			//query or mysql error
+		}
+	} else {
 		_, err = user.Delete()
 		if err != nil {
 			//Delete failed
@@ -328,9 +348,14 @@ func ExampleUserObj_Delete() {
 
 func ExampleReadAll() {
 	users, err := User.ReadAll("id DESC")
-	if err == nil {
-		for i := range users {
-			user := users[i]
+	if err != nil {
+		if err == sql.ErrNoRows {
+			//no results
+		} else {
+			//query or mysql error
+		}
+	} else {
+		for _, user := range users {
 			fmt.Println(user)
 		}
 	}
@@ -338,7 +363,13 @@ func ExampleReadAll() {
 
 func ExampleReadById() {
 	user, err := User.ReadById(12345)
-	if err == nil {
+	if err != nil {
+		if err == sql.ErrNoRows {
+			//no results
+		} else {
+			//query or mysql error
+		}
+	} else {
 		//handle user object
 		fmt.Println(user)
 	}
@@ -346,9 +377,14 @@ func ExampleReadById() {
 
 func ExampleReadByQuery() {
 	users, err := User.ReadByQuery("SELECT * FROM User WHERE email = ? ORDER BY id DESC", "some string")
-	if err == nil {
-		for i := range users {
-			user := users[i]
+	if err != nil {
+		if err == sql.ErrNoRows {
+			//no results
+		} else {
+			//query or mysql error
+		}
+	} else {
+		for _, user := range users {
 			fmt.Println(user)
 		}
 	}
@@ -356,66 +392,25 @@ func ExampleReadByQuery() {
 
 func ExampleReadOneByQuery() {
 	user, err := User.ReadOneByQuery("SELECT * FROM User WHERE email = ? ORDER BY id DESC", "some string")
-	if err == nil {
+	if err != nil {
+		if err == sql.ErrNoRows {
+			//no results
+		} else {
+			//query or mysql error
+		}
+	} else {
 		//handle user object
 		fmt.Println(user)
 	}
 }
 
 func ExampleExec() {
-	_, err := User.Exec("UPDATE User SET email = ? WHERE id = ?", "some string", 12345)
+	res, err := User.Exec("UPDATE User SET email = ? WHERE id = ?", "some string", 12345)
 	if err != nil {
-		//Exec failed
-	}
-}
-```
-# logger.go - base package
-```go
-package logger
-
-import (
-	"database/sql"
-	"fmt"
-	"log"
-	"net"
-	"os"
-	"runtime"
-	"strings"
-)
-
-var datetime string
-var hostname string
-var ip string
-var line int
-var pc uintptr
-var class string
-var method string
-var file string
-
-//Method to set all variables used in all functions of logging
-func setVars() {
-	t := time.Now()
-	datetime = t.Format("2006-01-02 15:04:05")
-	hostname, _ = os.Hostname()
-	ipArr, _ := net.LookupHost(hostname)
-	if len(ipArr) == 1 {
-		ip = ipArr[0]
-	}
-	pc, file, line, _ = runtime.Caller(3)
-	path := runtime.FuncForPC(pc).Name()
-	pathArgs := strings.Split(path, ".")
-	class = pathArgs[0]
-	method = pathArgs[1]
-}
-
-func HandleError(e interface{}) {
-	setVars()
-
-	if e == sql.ErrNoRows {
-		//handle queries with no results
+		//save failed
 	} else {
-		errorStr := fmt.Sprintf("%s %s(%s.%s):%d - %s", datetime, file, class, method, line, e.Error())
-		log.Fatalln(errorStr)
+		lastInsertId, err := res.LastInsertId()
+		numRowsAffected, err := res.RowsAffected()
 	}
 }
 ```
@@ -426,11 +421,12 @@ package connection
 import (
 	"database/sql"
 	_ "github.com/go-sql-driver/mysql"
-	"logger"
 )
 
-var connection *sql.DB
-var err error
+var (
+	connection *sql.DB
+	err        error
+)
 
 func Get() *sql.DB {
 	if connection != nil {
@@ -441,17 +437,11 @@ func Get() *sql.DB {
 		}
 	}
 
-	connection, err = sql.Open("mysql", "{username}:{password}@tcp({host}:{port})/{database}?parseTime=true")
+	connection, err = sql.Open("mysql", "{username}:{password}@tcp(localhost:3306)/main?parseTime=true")
 	if err != nil {
-		logger.HandleError(err)
+		//handle connection error
 	}
 
 	return connection
 }
 ```
-# Screenshots of godocs created from auto-generated package
-<img src="img/User_godocs_1.png">
-<img src="img/User_godocs_2.png">
-<img src="img/User_godocs_3.png">
-<img src="img/User_godocs_4.png">
-<img src="img/User_godocs_5.png">
