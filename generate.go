@@ -262,9 +262,7 @@ import (
 
 	string1 := `
 
-//` + uppercaseFirst(table) + `Obj is the structure of the home table
-//
-//This contains all columns that exist in the database
+//` + uppercaseFirst(table) + `Obj is the structure of the ` + table + ` table
 type ` + uppercaseFirst(table) + "Obj struct {"
 	string2 := ""
 	contents := ""
