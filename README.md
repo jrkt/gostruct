@@ -162,9 +162,7 @@ import (
 	"utils"
 )
 
-//UserObj is the structure of the home table
-//
-//This contains all columns that exist in the database
+//UserObj is the structure of the User table
 type UserObj struct {
 	Id              int           `column:"id" default:"" type:"int(10) unsigned" key:"PRI" extra:"auto_increment"`
 	Name            string        `column:"name" default:"" type:"varchar(150)" key:"" extra:""`
