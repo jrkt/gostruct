@@ -3,8 +3,6 @@ A package with a struct of the table and several methods to handle common reques
 
 It will also generate a connection package to share connection(s) to prevent multiple open database connections.
 
-# implementation
-
         go get github.com/go-sql-driver/mysql
         go get github.com/jonathankentstevens/gostruct
 
