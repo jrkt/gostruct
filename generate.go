@@ -227,12 +227,6 @@ func (gs *Gostruct) handleTable(table string) error {
 		return err
 	}
 
-	//handle Date file
-	err = gs.buildDatePackage()
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -271,7 +265,7 @@ type ` + uppercaseFirst(table) + "Obj struct {"
 	primaryKeyTypes := []string{}
 
 	importTime := false
-	importDate := false
+	importMysql := false
 
 	var questionMarks []string
 
@@ -341,8 +335,8 @@ Loop:
 				importTime = true
 				dataType = "time.Time"
 			} else {
-				importDate = true
-				dataType = "date.NullTime"
+				importMysql = true
+				dataType = "mysql.NullTime"
 			}
 		default:
 			isBool = false
@@ -400,9 +394,9 @@ Loop:
 		importString += `
 		"time"`
 	}
-	if importDate {
+	if importMysql {
 		importString += `
-		"date"`
+		"github.com/go-sql-driver/mysql"`
 	}
 
 	bs := "`"
@@ -550,7 +544,7 @@ func ReadAll(order string) ([]*` + uppercaseFirst(table) + `Obj, error) {
 
 //ReadByQuery returns an array of ` + uppercaseFirst(table) + `Obj pointers
 func ReadByQuery(query string, args ...interface{}) ([]*` + uppercaseFirst(table) + `Obj, error) {
-	con := connection.Get()
+	con := connection.Get("` + gs.Database + `")
 	var objects []*` + uppercaseFirst(table) + `Obj
 	query = strings.Replace(query, "'", "\"", -1)
 	rows, err := con.Query(query, args...)
@@ -577,7 +571,7 @@ func ReadByQuery(query string, args ...interface{}) ([]*` + uppercaseFirst(table
 func ReadOneByQuery(query string, args ...interface{}) (*` + uppercaseFirst(table) + `Obj, error) {
 	var ` + strings.ToLower(table) + ` ` + uppercaseFirst(table) + `Obj
 
-	con := connection.Get()
+	con := connection.Get("` + gs.Database + `")
 	query = strings.Replace(query, "'", "\"", -1)
 	err := con.QueryRow(query, args...).Scan(&` + strings.ToLower(table) + `.` + uppercaseFirst(objects[0].Name) + string2 + `)
 
@@ -586,7 +580,7 @@ func ReadOneByQuery(query string, args ...interface{}) (*` + uppercaseFirst(tabl
 
 //Exec allows for executing queries
 func Exec(query string, args ...interface{}) (sql.Result, error) {
-	con := connection.Get()
+	con := connection.Get("` + gs.Database + `")
 	return con.Exec(query, args...)
 }`
 
@@ -836,62 +830,12 @@ func (gs *Gostruct) buildUtilsPackage() error {
 
 import (
 	"database/sql"
-	"date"
+	"github.com/go-sql-driver/mysql"
 	"errors"
 	"reflect"
 	"strings"
 	"time"
 )
-
-func NewNullString(s string) sql.NullString {
-	if Empty(s) {
-		return sql.NullString{}
-	}
-	return sql.NullString{
-		String: s,
-		Valid:  true,
-	}
-}
-
-func NewNullInt(i int64) sql.NullInt64 {
-	if Empty(i) {
-		return sql.NullInt64{}
-	}
-	return sql.NullInt64{
-		Int64: i,
-		Valid: true,
-	}
-}
-
-func NewNullFloat(f float64) sql.NullFloat64 {
-	if Empty(f) {
-		return sql.NullFloat64{}
-	}
-	return sql.NullFloat64{
-		Float64: f,
-		Valid:   true,
-	}
-}
-
-func NewNullBool(b bool) sql.NullBool {
-	if Empty(b) {
-		return sql.NullBool{}
-	}
-	return sql.NullBool{
-		Bool:  b,
-		Valid: true,
-	}
-}
-
-func NewNullTime(t time.Time) date.NullTime {
-	if Empty(t) {
-		return date.NullTime{}
-	}
-	return date.NullTime{
-		Time:  t,
-		Valid: true,
-	}
-}
 
 //Determine whether or not an object is empty
 func Empty(val interface{}) bool {
@@ -927,7 +871,7 @@ func Empty(val interface{}) bool {
 				value = field.Field(0).Float()
 			case sql.NullBool:
 				value = field.Field(0).Bool()
-			case date.NullTime:
+			case mysql.NullTime:
 				value = field.Field(0).Interface()
 			default:
 				value = field.Interface()
@@ -1057,11 +1001,61 @@ func GetFieldValue(field reflect.Value, defaultVal string) interface{} {
 		val = NewNullFloat(t.Float64)
 	case sql.NullBool:
 		val = NewNullBool(t.Bool)
-	case date.NullTime:
+	case mysql.NullTime:
 		val = NewNullTime(t.Time)
 	}
 
 	return val
+}
+
+func NewNullString(s string) sql.NullString {
+	if Empty(s) {
+		return sql.NullString{}
+	}
+	return sql.NullString{
+		String: s,
+		Valid:  true,
+	}
+}
+
+func NewNullInt(i int64) sql.NullInt64 {
+	if Empty(i) {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{
+		Int64: i,
+		Valid: true,
+	}
+}
+
+func NewNullFloat(f float64) sql.NullFloat64 {
+	if Empty(f) {
+		return sql.NullFloat64{}
+	}
+	return sql.NullFloat64{
+		Float64: f,
+		Valid:   true,
+	}
+}
+
+func NewNullBool(b bool) sql.NullBool {
+	if Empty(b) {
+		return sql.NullBool{}
+	}
+	return sql.NullBool{
+		Bool:  b,
+		Valid: true,
+	}
+}
+
+func NewNullTime(t time.Time) mysql.NullTime {
+	if Empty(t) {
+		return mysql.NullTime{}
+	}
+	return mysql.NullTime{
+		Time:  t,
+		Valid: true,
+	}
 }
 `
 
@@ -1090,87 +1084,70 @@ func (gs *Gostruct) buildConnectionPackage() error {
 	}
 
 	conFilePath := GOPATH + "/src/connection/connection.go"
-	contents := `package connection
+	contents := `//Package connection handles all connections to the MySQL database(s)
+package connection
+
 import (
-	"logger"
 	"database/sql"
+	"fmt"
 	_ "github.com/go-sql-driver/mysql"
+	"log"
+	"sync"
 )
 
-var connection *sql.DB
-var err error
+var (
+	err         error
+	connections *Connections
+)
 
-func Get() *sql.DB {
+func init() {
+	connections = &Connections{
+		list: make(map[string]*sql.DB),
+	}
+}
+
+//Connections holds the list of database connections
+type Connections struct {
+	list map[string]*sql.DB
+	sync.Mutex
+}
+
+//Get returns a connection to a specific database. If the connection exists in the connections list AND is
+//still active, it will just return that connection. Otherwise, it will open a new connection to
+//the specified database and add it to the connections list.
+func Get(db string) *sql.DB {
+
+	connection := connections.list[db]
 	if connection != nil {
-		//determine whether connection is still alive
+		//determine if connection is still active
 		err = connection.Ping()
 		if err == nil {
 			return connection
 		}
 	}
 
-	connection, err = sql.Open("mysql", "` + gs.Username + `:` + gs.Password + `@tcp(` + gs.Host + `:3306)/` + gs.Database + `?parseTime=true")
+	con, err := sql.Open("mysql", fmt.Sprintf("root:Jstevens120)@tcp(localhost:3306)/%s?parseTime=true", db))
+	sql.Open("mysql", fmt.Sprintf("` + gs.Username + `:` + gs.Password + `@tcp(` + gs.Host + `:3306)/%s?parseTime=true", db))
 	if err != nil {
-		logger.HandleError(err)
+		//do whatever tickles your fancy here
+		log.Fatalln("Connection Error to DB [", db, "]", err.Error())
 	}
+	con.SetMaxIdleConns(10)
+	con.SetMaxOpenConns(500)
 
-	return connection
-}`
+	connections.Lock()
+	connections.list[db] = con
+	connections.Unlock()
+
+	return con
+}
+`
 	err = writeFile(conFilePath, contents, false)
 	if err != nil {
 		return err
 	}
 
 	_, err := runCommand("go fmt " + conFilePath)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (gs *Gostruct) buildDatePackage() error {
-	if !exists(GOPATH + "/src/date") {
-		err = gs.CreateDirectory(GOPATH + "/src/date")
-		if err != nil {
-			return err
-		}
-	}
-
-	dateFilePath := GOPATH + "/src/date/date.go"
-	contents := `package date
-import (
-	"time"
-	"database/sql/driver"
-)
-
-const DEFAULT_FORMAT = "2006-01-02 15:04:05"
-
-// In place of a sql.NullTime struct
-type NullTime struct {
-	Time  time.Time
-	Valid bool // Valid is true if Time is not NULL
-}
-
-// Scan implements the Scanner interface.
-func (nt *NullTime) Scan(value interface{}) error {
-	nt.Time, nt.Valid = value.(time.Time)
-	return nil
-}
-
-// Value implements the driver Valuer interface.
-func (nt NullTime) Value() (driver.Value, error) {
-	if !nt.Valid {
-		return nil, nil
-	}
-	return nt.Time, nil
-}`
-	err = writeFile(dateFilePath, contents, false)
-	if err != nil {
-		return err
-	}
-
-	_, err := runCommand("go fmt " + dateFilePath)
 	if err != nil {
 		return err
 	}

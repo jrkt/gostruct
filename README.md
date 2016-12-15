@@ -4,7 +4,7 @@
 [![Build Status](https://travis-ci.org/jonathankentstevens/gostruct.svg?branch=master)](https://travis-ci.org/jonathankentstevens/gostruct)
 
 # gostruct
-This is a library to auto-generate models with packages, structs, and basic methods of accessibility for a given MySQL database table.
+Library to auto-generate packages and basic CRUD operations for a given MySQL database table.
 
 # implementation
 
@@ -37,13 +37,22 @@ Then, run:
 
     go run generate.go -tables User -db main -host localhost
     
-A package with a struct of the table and several methods to handle common requests will be created in the $GOPATH/src/models/{table} directory. The files that are created, for a 'User' model (for example) would be: CRUX_User.go (containing the main CRUX methods and common methods such as ReadById, ReadAll, ReadOneByQuery, ReadByQuery, and Exec), DAO_User.go (this will hold any custom methods used to return User object(s)), BO_User.go (this contains methods to be called on the User object itself), a User_test.go to serve as a base for your unit testing and an examples_test.go with auto-generated example methods for godoc readability. In addition, it will generate a connection package to share a connection between all your models to prevent multiple open database connections and a date package to implement a "sql.NullTime"-like struct type for null date values in any MySQL result set.
+A package with a struct of the table and several methods to handle common requests will be created in the $GOPATH/src/models/{table} directory. The files that are created, for a 'User' model (for example) would be:
+
+- CRUX_User.go (containing the main CRUX methods and common methods such as ReadById, ReadAll, ReadOneByQuery, ReadByQuery, and Exec)
+    - This also validates any enum/set data type with the value passed to ensure it is one of the required fields
+- DAO_User.go (this will hold any custom methods used to return User object(s))
+- BO_User.go (this contains methods to be called on the User object itself)
+- User_test.go to serve as a base for your unit testing
+- examples_test.go with auto-generated example methods for godoc readability. 
+
+It will also generate a connection package to share connection(s) to prevent multiple open database connections.
 
 # flags 
 
 tables
     
-    comma-separated list of MySQL database tables
+    Comma-separated list of MySQL database tables
     
 db
     
@@ -156,7 +165,7 @@ package User
 import (
 	"connection"
 	"database/sql"
-	"date"
+	"github.com/go-sql-driver/mysql"
 	"reflect"
 	"strings"
 	"utils"
@@ -169,8 +178,8 @@ type UserObj struct {
 	Email           string        `column:"email" default:"" type:"varchar(250)" key:"" extra:""`
 	Income          float64       `column:"income" default:"0" type:"decimal(10,0)" key:"" extra:""`
 	IsActive        bool          `column:"isActive" default:"1" type:"tinyint(1)" key:"" extra:""`
-	SignupDate      date.NullTime `column:"signupDate" default:"" type:"datetime" key:"" extra:""`
-	TerminationDate date.NullTime `column:"terminationDate" default:"" type:"datetime" key:"" extra:""`
+	SignupDate      mysql.NullTime `column:"signupDate" default:"" type:"datetime" key:"" extra:""`
+	TerminationDate mysql.NullTime `column:"terminationDate" default:"" type:"datetime" key:"" extra:""`
 }
 
 //Save does just that. It will save if the object key exists, otherwise it will add the record
@@ -236,7 +245,7 @@ func ReadAll(order string) ([]*UserObj, error) {
 
 //ReadByQuery returns an array of UserObj pointers
 func ReadByQuery(query string, args ...interface{}) ([]*UserObj, error) {
-	con := connection.Get()
+	con := connection.Get("main")
 	var objects []*UserObj
 	query = strings.Replace(query, "'", "\"", -1)
 	rows, err := con.Query(query, args...)
@@ -263,7 +272,7 @@ func ReadByQuery(query string, args ...interface{}) ([]*UserObj, error) {
 func ReadOneByQuery(query string, args ...interface{}) (*UserObj, error) {
 	var user UserObj
 
-	con := connection.Get()
+	con := connection.Get("main")
 	query = strings.Replace(query, "'", "\"", -1)
 	err := con.QueryRow(query, args...).Scan(&user.Id, &user.Name, &user.Email, &user.Income, &user.IsActive, &user.SignupDate, &user.TerminationDate)
 
@@ -272,7 +281,7 @@ func ReadOneByQuery(query string, args ...interface{}) (*UserObj, error) {
 
 //Exec allows for executing queries
 func Exec(query string, args ...interface{}) (sql.Result, error) {
-	con := connection.Get()
+	con := connection.Get("main")
 	return con.Exec(query, args...)
 }
 
@@ -414,32 +423,61 @@ func ExampleExec() {
 ```
 # connection.go base package
 ```go
+//Package connection handles all connections to the MySQL database(s)
 package connection
 
 import (
 	"database/sql"
+	"fmt"
 	_ "github.com/go-sql-driver/mysql"
+	"log"
+	"sync"
 )
 
 var (
-	connection *sql.DB
-	err        error
+	err         error
+	connections *Connections
 )
 
-func Get() *sql.DB {
+func init() {
+	connections = &Connections{
+		list: make(map[string]*sql.DB),
+	}
+}
+
+//Connections holds the list of database connections
+type Connections struct {
+	list map[string]*sql.DB
+	sync.Mutex
+}
+
+//Get returns a connection to a specific database. If the connection exists in the connections list AND is
+//still active, it will just return that connection. Otherwise, it will open a new connection to
+//the specified database and add it to the connections list.
+func Get(db string) *sql.DB {
+
+	connection := connections.list[db]
 	if connection != nil {
-		//determine whether connection is still alive
+		//determine if connection is still active
 		err = connection.Ping()
 		if err == nil {
 			return connection
 		}
 	}
 
-	connection, err = sql.Open("mysql", "{username}:{password}@tcp(localhost:3306)/main?parseTime=true")
+	con, err := sql.Open("mysql", fmt.Sprintf("root:Jstevens120)@tcp(localhost:3306)/%s?parseTime=true", db))
+	sql.Open("mysql", fmt.Sprintf("root:Jstevens120)@tcp(localhost:3306)/%s?parseTime=true", db))
 	if err != nil {
-		//handle connection error
+		//do whatever tickles your fancy here
+		log.Fatalln("Connection Error to DB [", db, "]", err.Error())
 	}
+	con.SetMaxIdleConns(10)
+	con.SetMaxOpenConns(500)
 
-	return connection
+	connections.Lock()
+	connections.list[db] = con
+	connections.Unlock()
+
+	return con
 }
 ```
