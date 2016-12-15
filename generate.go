@@ -1,7 +1,46 @@
-//Package gostruct is an ORM that generates a golang package based on a MySQL database table including a DAO, BO, CRUX, test, and example file
-//
-//The CRUX file provides all basic CRUD functionality to handle any objects of the table. The test file is a skeleton file
-//ready to use for unit testing.
+/*
+A package with a struct of the table and several methods to handle common requests will be created in the $GOPATH/src/models/{table} directory. The files that are created, for a 'User' model (for example) would be:
+
+- CRUX_User.go (containing the main CRUX methods and common methods such as ReadById, ReadAll, ReadOneByQuery, ReadByQuery, and Exec)
+    - This also validates any enum/set data type with the value passed to ensure it is one of the required fields
+- DAO_User.go (this will hold any custom methods used to return User object(s))
+- BO_User.go (this contains methods to be called on the User object itself)
+- User_test.go to serve as a base for your unit testing
+- examples_test.go with auto-generated example methods for godoc readability.
+
+It will also generate a connection package to share connection(s) to prevent multiple open database connections.
+
+# implementation
+
+    go get github.com/go-sql-driver/mysql
+    go get github.com/jonathankentstevens/gostruct
+
+Create a generate.go file with the following contents (including your db username/password):
+
+```go
+package main
+
+import (
+    _ "github.com/go-sql-driver/mysql"
+    "github.com/jonathankentstevens/gostruct"
+    "log"
+)
+
+func main() {
+    gs := new(gostruct.Gostruct)
+    gs.Username = "<db_user>"
+    gs.Password = "<db_pass>"
+    err := gs.Generate()
+    if err != nil {
+        log.Fatalln(err)
+    }
+}
+```
+
+Then, run:
+
+    go run generate.go -tables User -db main -host localhost
+*/
 package gostruct
 
 import (
