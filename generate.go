@@ -1,7 +1,17 @@
 /*
 Package gostruct is an ORM that builds a package for a specific MySQL database table.
 
-A package with the underlying struct of the table will be created in the $GOPATH/src/models/{table} directory along with several methods to handle common requests. The files that are created in the package, for a 'User' model (for example) would be: CRUX_User.go (CRUD operations and common ReadBy functions) which validates any enum/set data type with the value passed to ensure it is one of the required fields; DAO_User.go (this will hold any custom functions used to return User object(s)); BO_User.go (this contains methods to be called on the User object pointer(s)); User_test.go to serve as a base for your unit testing; examples_test.go with auto-generated example methods for godoc readability.
+A package with the underlying struct of the table will be created in the $GOPATH/src/models/{table} directory along with several methods to handle common requests. The files that are created in the package, for a 'User' model (for example) would be:
+
+CRUX_User.go - CRUD operations and common ReadBy functions. It also validates any enum/set data type with the value passed to ensure it is one of the required fields
+
+DAO_User.go - Custom functions used to return User object(s)
+
+BO_User.go - Custom methods to be called on the object receiver
+
+User_test.go - Serves as a base for your unit testing
+
+examples_test.go - Includes auto-generated example methods based on the auto-generated methods in the CRUX file
 
 It will also generate a connection package to share connection(s) to prevent multiple open database connections.
 
