@@ -1,11 +1,11 @@
 /*
 A package with a struct of the table and several methods to handle common requests will be created in the $GOPATH/src/models/{table} directory. The files that are created, for a 'User' model (for example) would be:
 
-- CRUX_User.go (containing the main CRUX methods and common methods such as ReadById, ReadAll, ReadOneByQuery, ReadByQuery, and Exec). This also validates any enum/set data type with the value passed to ensure it is one of the required fields
-- DAO_User.go (this will hold any custom methods used to return User object(s))
-- BO_User.go (this contains methods to be called on the User object itself)
-- User_test.go to serve as a base for your unit testing
-- examples_test.go with auto-generated example methods for godoc readability.
+    - CRUX_User.go (containing the main CRUX methods and common methods such as ReadById, ReadAll, ReadOneByQuery, ReadByQuery, and Exec). This also validates any enum/set data type with the value passed to ensure it is one of the required fields
+    - DAO_User.go (this will hold any custom methods used to return User object(s))
+    - BO_User.go (this contains methods to be called on the User object itself)
+    - User_test.go to serve as a base for your unit testing
+    - examples_test.go with auto-generated example methods for godoc readability.
 
 It will also generate a connection package to share connection(s) to prevent multiple open database connections.
 
@@ -19,19 +19,17 @@ Create a generate.go file with the following contents (including your db usernam
 	package main
 
 	import (
-	    _ "github.com/go-sql-driver/mysql"
-	    "github.com/jonathankentstevens/gostruct"
-	    "log"
+		"github.com/jonathankentstevens/gostruct"
 	)
 
 	func main() {
-	    gs := new(gostruct.Gostruct)
-	    gs.Username = "<db_user>"
-	    gs.Password = "<db_pass>"
-	    err := gs.Generate()
-	    if err != nil {
-	        log.Fatalln(err)
-	    }
+		gs := new(gostruct.Gostruct)
+		gs.Username = "root"
+		gs.Password = "Jstevens120)"
+		err := gs.Generate()
+		if err != nil {
+			println("Generate Error:", err)
+		}
 	}
 
 Then, run:

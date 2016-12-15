@@ -17,19 +17,17 @@ Create a generate.go file with the following contents (including your db usernam
 package main
 
 import (
-    _ "github.com/go-sql-driver/mysql"
-    "github.com/jonathankentstevens/gostruct"
-    "log"
+	"github.com/jonathankentstevens/gostruct"
 )
 
 func main() {
-    gs := new(gostruct.Gostruct)
-    gs.Username = "<db_user>"
-    gs.Password = "<db_pass>"
-    err := gs.Generate()
-    if err != nil {
-        log.Fatalln(err)
-    }
+	gs := new(gostruct.Gostruct)
+	gs.Username = "root"
+	gs.Password = "Jstevens120)"
+	err := gs.Generate()
+	if err != nil {
+		println("Generate Error:", err)
+	}
 }
 ```
     
