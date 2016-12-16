@@ -245,8 +245,26 @@ func ReadAll(order string) ([]*UserObj, error) {
 func ReadByQuery(query string, args ...interface{}) ([]*UserObj, error) {
 	con := connection.Get("main")
 	var objects []*UserObj
-	query = strings.Replace(query, "'", "\"", -1)
-	rows, err := con.Query(query, args...)
+	var argss []interface{}
+    for _, arg := range args {
+        switch t := arg.(type) {
+        case connection.QueryOptions:
+            orderBy := t.OrderBy
+            if orderBy != "" {
+                query += fmt.Sprintf(" ORDER BY %s", orderBy)
+            }
+            limit := t.Limit
+            if limit != 0 {
+                query += fmt.Sprintf(" LIMIT %d", limit)
+            }
+
+        default:
+            argss = append(argss, t)
+        }
+    }
+
+    query = strings.Replace(query, "'", "\"", -1)
+    rows, err := con.Query(query, argss...)
 	if err != nil {
 		return objects, err
 	} else if rows.Err() != nil {

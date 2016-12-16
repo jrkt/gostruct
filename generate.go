@@ -286,10 +286,11 @@ package ` + uppercaseFirst(table)
 	importString := `
 
 import (
-	"database/sql"
-	"strings"
 	"connection"
+	"database/sql"
+	"fmt"
 	"reflect"
+	"strings"
 	"utils"`
 
 	string1 := `
@@ -321,12 +322,12 @@ Loop:
 		isBool := true
 		var dataType string
 		switch object.DataType {
-		case "int":
+		case "int", "mediumint":
 			isBool = false
 			if object.IsNullable == "NO" {
 				dataType = "int"
 			} else {
-				dataType = "sql.NullInt64"
+				dataType = "connection.NullInt"
 			}
 		case "tinyint":
 			rows, err := con.Query("SELECT DISTINCT(`" + object.Name + "`) FROM " + gs.Database + "." + table)
@@ -351,7 +352,7 @@ Loop:
 				if object.IsNullable == "NO" {
 					dataType = "int"
 				} else {
-					dataType = "sql.NullInt64"
+					dataType = "connection.NullInt"
 				}
 			}
 		case "bool", "boolean":
@@ -403,7 +404,7 @@ Loop:
 			}
 			if dataType == "string" || dataType == "sql.NullString" {
 				exampleIdStr = `"12345"`
-			} else if dataType == "int" || dataType == "sql.NullInt64" {
+			} else if dataType == "int" || dataType == "connection.NullInt" {
 				exampleIdStr = `12345`
 			}
 			if exampleOrderStr == "" {
@@ -441,6 +442,11 @@ Loop:
 
 	if len(primaryKeys) > 0 {
 		string1 += `
+
+//TableName returns... you guessed it. The table's actual name.
+func (` + strings.ToLower(table) + ` *` + uppercaseFirst(table) + `Obj) TableName() string {
+	return "` + table + `"
+}
 
 //Save does just that. It will save if the object key exists, otherwise it will add the record
 //by running INSERT ON DUPLICATE KEY UPDATE
@@ -584,8 +590,26 @@ func ReadAll(order string) ([]*` + uppercaseFirst(table) + `Obj, error) {
 func ReadByQuery(query string, args ...interface{}) ([]*` + uppercaseFirst(table) + `Obj, error) {
 	con := connection.Get("` + gs.Database + `")
 	var objects []*` + uppercaseFirst(table) + `Obj
+	var argss []interface{}
+	for _, arg := range args {
+		switch t := arg.(type) {
+		case connection.QueryOptions:
+			orderBy := t.OrderBy
+			if orderBy != "" {
+				query += fmt.Sprintf(" ORDER BY %s", orderBy)
+			}
+			limit := t.Limit
+			if limit != 0 {
+				query += fmt.Sprintf(" LIMIT %d", limit)
+			}
+
+		default:
+			argss = append(argss, t)
+		}
+	}
+
 	query = strings.Replace(query, "'", "\"", -1)
-	rows, err := con.Query(query, args...)
+	rows, err := con.Query(query, argss...)
 	if err != nil {
 		return objects, err
 	} else if rows.Err() != nil {
@@ -869,6 +893,7 @@ func (gs *Gostruct) buildUtilsPackage() error {
 import (
 	"database/sql"
 	"github.com/go-sql-driver/mysql"
+	"connection"
 	"errors"
 	"reflect"
 	"strings"
@@ -903,7 +928,7 @@ func Empty(val interface{}) bool {
 				value = field.Interface()
 			case sql.NullString:
 				value = field.Field(0).String()
-			case sql.NullInt64:
+			case connection.NullInt:
 				value = field.Field(0).Int()
 			case sql.NullFloat64:
 				value = field.Field(0).Float()
@@ -948,7 +973,7 @@ func isEmpty(val interface{}) bool {
 			empty = true
 		}
 	case time.Time:
-		if v.String() == "0001-01-01 00:00:00 +0000 UTC" {
+		if v.IsZero() {
 			empty = true
 		}
 	}
@@ -1033,8 +1058,8 @@ func GetFieldValue(field reflect.Value, defaultVal string) interface{} {
 		}
 	case sql.NullString:
 		val = NewNullString(t.String)
-	case sql.NullInt64:
-		val = NewNullInt(t.Int64)
+	case connection.NullInt:
+		val = NewNullInt(t.Int)
 	case sql.NullFloat64:
 		val = NewNullFloat(t.Float64)
 	case sql.NullBool:
@@ -1056,12 +1081,12 @@ func NewNullString(s string) sql.NullString {
 	}
 }
 
-func NewNullInt(i int64) sql.NullInt64 {
+func NewNullInt(i int) connection.NullInt {
 	if Empty(i) {
-		return sql.NullInt64{}
+		return connection.NullInt{}
 	}
-	return sql.NullInt64{
-		Int64: i,
+	return connection.NullInt{
+		Int: i,
 		Valid: true,
 	}
 }
@@ -1127,6 +1152,7 @@ package connection
 
 import (
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
 	"log"
@@ -1150,6 +1176,32 @@ type Connections struct {
 	sync.Mutex
 }
 
+//QueryOptions allows for passing optional parameters for queries
+type QueryOptions struct {
+	OrderBy string
+	Limit   int
+}
+
+// In place of a sql.NullInt struct
+type NullInt struct {
+	Int   int
+	Valid bool // Valid is true if int is not 0
+}
+
+// Scan implements the Scanner interface.
+func (ni *NullInt) Scan(value interface{}) error {
+	ni.Int, ni.Valid = value.(int)
+	return nil
+}
+
+// Value implements the driver Valuer interface.
+func (ni *NullInt) Value() (driver.Value, error) {
+	if !ni.Valid {
+		return nil, nil
+	}
+	return ni.Int, nil
+}
+
 //Get returns a connection to a specific database. If the connection exists in the connections list AND is
 //still active, it will just return that connection. Otherwise, it will open a new connection to
 //the specified database and add it to the connections list.
@@ -1164,8 +1216,7 @@ func Get(db string) *sql.DB {
 		}
 	}
 
-	con, err := sql.Open("mysql", fmt.Sprintf("root:Jstevens120)@tcp(localhost:3306)/%s?parseTime=true", db))
-	sql.Open("mysql", fmt.Sprintf("` + gs.Username + `:` + gs.Password + `@tcp(` + gs.Host + `:3306)/%s?parseTime=true", db))
+	con, err := sql.Open("mysql", fmt.Sprintf("` + gs.Username + `:` + gs.Password + `@tcp(` + gs.Host + `:3306)/%s?parseTime=true", db))
 	if err != nil {
 		//do whatever tickles your fancy here
 		log.Fatalln("Connection Error to DB [", db, "]", err.Error())
