@@ -81,11 +81,10 @@ func main() {
     user, err := User.ReadById(12345)
     if err != nil {
         //handle error
-    } else {
-	    user.Email = "test@email.com"
-	    user.IsActive = false
-	    user.Save()
     }
+	user.Email = "test@email.com"
+    user.IsActive = false
+    user.Save()    
     
     //create new user
     user := new(User.UserObj)
@@ -104,18 +103,14 @@ func main() {
 ```
 # DAO_User.go - sample method to include
 ```go
-func ReadAllActive(order string) ([]*UserObj, error) {
-	orderStr := ""
-	if order != "" {
-		orderStr = " ORDER BY " + order
-	}
-	return ReadByQuery("SELECT * FROM User WHERE IsActive = '1'" + orderStr)
+func ReadAllActive(options connection.QueryOptions) ([]*UserObj, error) {
+	return ReadByQuery("SELECT * FROM User WHERE IsActive = '1'", options)
 }
 ```
 Usage:
 ```go
 func main() {
-	users, err := User.ReadAllActive("Name ASC")
+	users, err := User.ReadAllActive(connection.QueryOptions{OrderBy: "Name ASC"})
 	if err != nil {
 		//handle error
 	}
