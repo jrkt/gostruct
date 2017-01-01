@@ -47,6 +47,8 @@ import (
 	"log"
 	"os"
 	"strings"
+
+	_ "github.com/go-sql-driver/mysql"
 )
 
 //TableObj is the result set returned from the MySQL information_schema that
@@ -415,7 +417,7 @@ Loop:
 					name = "objType"
 				}
 				nullableDeclarations += `
-					var ` + name + " *" + dataType
+					var ` + name + " " + dataType
 				nullableHandlers += `
 				if ` + name + ` != nil {
 					` + "obj." + uppercaseFirst(object.Name) + ` = *` + name + `
