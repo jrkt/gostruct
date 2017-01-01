@@ -124,7 +124,7 @@ func main() {
 ```go
 func (user *UserObj) Terminate() error {
 	user.IsActive = false
-	user.TerminationDate.Time = time.Now().Local()
+	user.TerminationDate = time.Now().Local()
 	_, err := user.Save()
 	if err != nil {
 		//Save failed
