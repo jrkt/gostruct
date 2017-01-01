@@ -549,7 +549,7 @@ func (obj *` + tableNaming + `) Delete() (sql.Result, error) {
 	return Exec("DELETE FROM ` + table + ` WHERE` + whereStrQuery + `", ` + whereStrQueryValues + `)
 }
 `
-		paramStr, whereStr, whereStrValues := "", "", ""
+		paramStr, whereStrValues := "", ""
 		for k := range primaryKeys {
 			var param string
 			if primaryKeys[k] == "type" {
@@ -561,29 +561,21 @@ func (obj *` + tableNaming + `) Delete() (sql.Result, error) {
 			}
 
 			var dataType string
-			var paramTypeStr string
 			switch primaryKeyTypes[k] {
 			case "int64":
 				dataType = "int64"
-				paramTypeStr = "strconv.FormatInt(" + param + ", 10)"
 			case "float64":
 				dataType = "float64"
-				paramTypeStr = "strconv.FormatFloat(" + param + ", 'f', -1, 64)"
 			default:
 				dataType = "string"
-				paramTypeStr = param
 			}
 
 			paramStr += param + " " + dataType
 			if k > 0 {
-				whereStr += " AND"
 				whereStrValues += ","
 			}
-			if k == len(primaryKeys)-1 {
-				whereStr += ` ` + param + ` = '" + ` + paramTypeStr + ` + "'"`
-			} else {
+			if k != len(primaryKeys)-1 {
 				paramStr += ", "
-				whereStr += ` ` + param + ` = '" + ` + paramTypeStr + ` + "'`
 			}
 			whereStrValues += " " + param
 		}
