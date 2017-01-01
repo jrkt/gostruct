@@ -37,10 +37,9 @@ Then, run:
     
 A package with a struct of the table and several methods to handle common requests will be created in the $GOPATH/src/models/{table} directory. The files that are created, for a 'User' model (for example) would be:
 
-- CRUX_User.go (containing the main CRUX methods and common methods such as ReadById, ReadAll, ReadOneByQuery, ReadByQuery, and Exec)
+- User_base.go (containing the main CRUX methods and common methods such as ReadById, ReadAll, ReadOneByQuery, ReadByQuery, and Exec)
     - This also validates any enum/set data type with the value passed to ensure it is one of the required fields
-- DAO_User.go (this will hold any custom methods used to return User object(s))
-- BO_User.go (this contains methods to be called on the User object itself)
+- User_extended.go (this will hold any custom methods used to return User object(s))
 - User_test.go to serve as a base for your unit testing
 - examples_test.go with auto-generated example methods for godoc readability. 
 
@@ -101,7 +100,7 @@ func main() {
     }
 }
 ```
-# DAO_User.go - sample method to include
+# User_extended.go - sample function to include
 ```go
 func ReadAllActive(options connection.QueryOptions) ([]*UserObj, error) {
 	return ReadByQuery("SELECT * FROM User WHERE IsActive = '1'", options)
@@ -121,7 +120,7 @@ func main() {
 	}
 }
 ```
-# BO_User.go - sample method to include
+# User_extended.go - sample method to include
 ```go
 func (user *UserObj) Terminate() error {
 	user.IsActive = false
@@ -148,37 +147,56 @@ func main() {
 	}
 }
 ```
-# CRUX_User.go - sample file
+# User_base.go - sample file
 ```go
-//Package User serves as the base structure for the User table
-//and contains base methods and CRUD functionality to
+//The User package serves as the base structure for the User table
+//
+//Package User contains base methods and CRUD functionality to
 //interact with the User table in the main database
+
 package User
 
 import (
 	"connection"
 	"database/sql"
+	"errors"
 	"github.com/go-sql-driver/mysql"
 	"reflect"
 	"strings"
+	"time"
 	"utils"
+	"utils/value"
 )
 
-//UserObj is the structure of the User table
-type UserObj struct {
-	Id              int           `column:"id" default:"" type:"int(10) unsigned" key:"PRI" extra:"auto_increment"`
-	Name            string        `column:"name" default:"" type:"varchar(150)" key:"" extra:""`
-	Email           string        `column:"email" default:"" type:"varchar(250)" key:"" extra:""`
-	Income          float64       `column:"income" default:"0" type:"decimal(10,0)" key:"" extra:""`
-	IsActive        bool          `column:"isActive" default:"1" type:"tinyint(1)" key:"" extra:""`
-	SignupDate      mysql.NullTime `column:"signupDate" default:"" type:"datetime" key:"" extra:""`
-	TerminationDate mysql.NullTime `column:"terminationDate" default:"" type:"datetime" key:"" extra:""`
+//User is the structure of the home table
+//
+//This contains all columns that exist in the database
+type User struct {
+	Id              int64      `column:"id" default:"" type:"int(10) unsigned" key:"PRI" null:"NO" extra:"auto_increment"`
+	Name            string     `column:"name" default:"" type:"varchar(150)" key:"" null:"NO" extra:""`
+	Email           string     `column:"email" default:"" type:"varchar(250)" key:"" null:"NO" extra:""`
+	Income          float64    `column:"income" default:"0" type:"decimal(10,0)" key:"" null:"NO" extra:""`
+	IsActive        bool       `column:"isActive" default:"1" type:"tinyint(1)" key:"" null:"NO" extra:""`
+	SignupDate      *time.Time `column:"signupDate" default:"" type:"datetime" key:"" null:"YES" extra:""`
+	TerminationDate *time.Time `column:"terminationDate" default:"" type:"datetime" key:"" null:"YES" extra:""`
+	Weight          *int64     `column:"weight" default:"" type:"int(11)" key:"" null:"YES" extra:""`
 }
 
-//Save does just that. It will save if the object key exists, otherwise it will add the record
-//by running INSERT ON DUPLICATE KEY UPDATE
-func (user *UserObj) Save() (sql.Result, error) {
-	v := reflect.ValueOf(user).Elem()
+//user is the nilable structure of the home table
+type user struct {
+	Id              int64
+	Name            string
+	Email           string
+	Income          float64
+	IsActive        bool
+	SignupDate      mysql.NullTime
+	TerminationDate mysql.NullTime
+	Weight          sql.NullInt64
+}
+
+//Save runs an INSERT..UPDATE ON DUPLICATE KEY and validates each value being saved
+func (obj *User) Save() (sql.Result, error) {
+	v := reflect.ValueOf(obj).Elem()
 	objType := v.Type()
 
 	var columnArr []string
@@ -205,97 +223,97 @@ func (user *UserObj) Save() (sql.Result, error) {
 	query += " (" + strings.Join(columnArr, ", ") + ") VALUES (" + strings.Join(q, ", ") + ") ON DUPLICATE KEY UPDATE " + updateStr
 	newArgs := append(args, args...)
 	newRecord := false
-	if utils.Empty(user.Id) {
+	if value.Empty(obj.Id) {
 		newRecord = true
 	}
 
 	res, err := Exec(query, newArgs...)
 	if err == nil && newRecord {
 		id, _ := res.LastInsertId()
-		user.Id = int(id)
+		obj.Id = id
 	}
 	return res, err
 }
 
-//Delete does just that. It removes that record from the database based on the primary key.
-func (user *UserObj) Delete() (sql.Result, error) {
-	return Exec("DELETE FROM User WHERE id = ?", user.Id)
+//Delete removes a record from the database according to the primary key
+func (obj *User) Delete() (sql.Result, error) {
+	return Exec("DELETE FROM User WHERE id = ?", obj.Id)
 }
 
-//ReadById returns a pointer to a(n) UserObj
-func ReadById(id int) (*UserObj, error) {
+//ReadByKey returns a single pointer to a(n) User
+func ReadByKey(id int64) (*User, error) {
 	return ReadOneByQuery("SELECT * FROM User WHERE id = ?", id)
 }
 
-//ReadAll returns all records in the User table
-func ReadAll(order string) ([]*UserObj, error) {
-	query := "SELECT * FROM User"
-	if order != "" {
-		query += " ORDER BY " + order
-	}
-	return ReadByQuery(query)
+//ReadAll returns all records in the table
+func ReadAll(options connection.QueryOptions) ([]*User, error) {
+	return ReadByQuery("SELECT * FROM User", options)
 }
 
-//ReadByQuery returns an array of UserObj pointers
-func ReadByQuery(query string, args ...interface{}) ([]*UserObj, error) {
-	con := connection.Get("main")
-	var objects []*UserObj
-	var argss []interface{}
-    for _, arg := range args {
-        switch t := arg.(type) {
-        case connection.QueryOptions:
-            orderBy := t.OrderBy
-            if orderBy != "" {
-                query += fmt.Sprintf(" ORDER BY %s", orderBy)
-            }
-            limit := t.Limit
-            if limit != 0 {
-                query += fmt.Sprintf(" LIMIT %d", limit)
-            }
+//ReadByQuery returns an array of User pointers
+func ReadByQuery(query string, args ...interface{}) ([]*User, error) {
+	var objects []*User
+	var err error
 
-        default:
-            argss = append(argss, t)
-        }
-    }
-
-    query = strings.Replace(query, "'", "\"", -1)
-    rows, err := con.Query(query, argss...)
+	con, err := connection.Get("main")
+	if err != nil {
+		return objects, errors.New("connection failed")
+	}
+	query = strings.Replace(query, "'", "\"", -1)
+	rows, err := con.Query(query, args...)
 	if err != nil {
 		return objects, err
-	} else if rows.Err() != nil {
-		return objects, rows.Err()
-	}
-
-	defer rows.Close()
-	for rows.Next() {
-		var user UserObj
-		err = rows.Scan(&user.Id, &user.Name, &user.Email, &user.Income, &user.IsActive, &user.SignupDate, &user.TerminationDate)
-		if err != nil {
+	} else {
+		rowsErr := rows.Err()
+		if rowsErr != nil {
 			return objects, err
 		}
-		objects = append(objects, &user)
+
+		defer rows.Close()
+		for rows.Next() {
+			var obj user
+			err = rows.Scan(&obj.Id, &obj.Name, &obj.Email, &obj.Income, &obj.IsActive, &obj.SignupDate, &obj.TerminationDate, &obj.Weight)
+			if err != nil {
+				return objects, err
+			}
+			objects = append(objects, &User{obj.Id, &obj.Name, &obj.Email, &obj.Income, &obj.IsActive, &obj.SignupDate.Time, &obj.TerminationDate.Time, &obj.Weight.Int64})
+		}
 	}
 
-	return objects, nil
+	if len(objects) == 0 {
+		err = sql.ErrNoRows
+	}
+
+	return objects, err
 }
 
-//ReadOneByQuery returns a pointer to a(n) UserObj
-func ReadOneByQuery(query string, args ...interface{}) (*UserObj, error) {
-	var user UserObj
+//ReadOneByQuery returns a single pointer to a(n) User
+func ReadOneByQuery(query string, args ...interface{}) (*User, error) {
+	var obj user
 
-	con := connection.Get("main")
+	con, err := connection.Get("main")
+	if err != nil {
+		return &User{}, errors.New("connection failed")
+	}
 	query = strings.Replace(query, "'", "\"", -1)
-	err := con.QueryRow(query, args...).Scan(&user.Id, &user.Name, &user.Email, &user.Income, &user.IsActive, &user.SignupDate, &user.TerminationDate)
+	err = con.QueryRow(query, args...).Scan(&obj.Id, &obj.Name, &obj.Email, &obj.Income, &obj.IsActive, &obj.SignupDate, &obj.TerminationDate, &obj.Weight)
+	if err != nil && err != sql.ErrNoRows {
+		return &User{}, err
+	}
 
-	return &user, err
+	return &User{obj.Id, &obj.Name, &obj.Email, &obj.Income, &obj.IsActive, &obj.SignupDate.Time, &obj.TerminationDate.Time, &obj.Weight.Int64}, nil
+
 }
 
-//Exec allows for executing queries
+//Exec allows for update queries
 func Exec(query string, args ...interface{}) (sql.Result, error) {
-	con := connection.Get("main")
+	con, err := connection.Get("main")
+	if err != nil {
+		var result sql.Result
+		return result, errors.New("connection failed")
+	}
 	return con.Exec(query, args...)
 }
-
 ```
 
 # User_test.go - sample skeleton file generated
@@ -308,187 +326,5 @@ import (
 
 func TestSomething(t *testing.T) {
 	//test stuff here..
-}
-```
-# examples_test.go - sample file
-```go
-package User_test
-
-import (
-	"fmt"
-	"models/User"
-	"database/sql"
-)
-
-func ExampleUserObj_Save() {
-	//existing user
-	user, err := User.ReadById(12345)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			//no results
-		} else {
-			//query or mysql error
-		}
-	} else {
-		user.Email = "some string"
-		_, err = user.Save()
-		if err != nil {
-			//Save failed
-		}
-	}
-
-	//new user
-	user = new(User.UserObj)
-	res, err := user.Save()
-	if err != nil {
-		//save failed
-	} else {
-		lastInsertId, err := res.LastInsertId()
-		numRowsAffected, err := res.RowsAffected()
-	}
-}
-
-func ExampleUserObj_Delete() {
-	user, err := User.ReadById(12345)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			//no results
-		} else {
-			//query or mysql error
-		}
-	} else {
-		_, err = user.Delete()
-		if err != nil {
-			//Delete failed
-		}
-	}
-}
-
-func ExampleReadAll() {
-	users, err := User.ReadAll("id DESC")
-	if err != nil {
-		if err == sql.ErrNoRows {
-			//no results
-		} else {
-			//query or mysql error
-		}
-	} else {
-		for _, user := range users {
-			fmt.Println(user)
-		}
-	}
-}
-
-func ExampleReadById() {
-	user, err := User.ReadById(12345)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			//no results
-		} else {
-			//query or mysql error
-		}
-	} else {
-		//handle user object
-		fmt.Println(user)
-	}
-}
-
-func ExampleReadByQuery() {
-	users, err := User.ReadByQuery("SELECT * FROM User WHERE email = ? ORDER BY id DESC", "some string")
-	if err != nil {
-		if err == sql.ErrNoRows {
-			//no results
-		} else {
-			//query or mysql error
-		}
-	} else {
-		for _, user := range users {
-			fmt.Println(user)
-		}
-	}
-}
-
-func ExampleReadOneByQuery() {
-	user, err := User.ReadOneByQuery("SELECT * FROM User WHERE email = ? ORDER BY id DESC", "some string")
-	if err != nil {
-		if err == sql.ErrNoRows {
-			//no results
-		} else {
-			//query or mysql error
-		}
-	} else {
-		//handle user object
-		fmt.Println(user)
-	}
-}
-
-func ExampleExec() {
-	res, err := User.Exec("UPDATE User SET email = ? WHERE id = ?", "some string", 12345)
-	if err != nil {
-		//save failed
-	} else {
-		lastInsertId, err := res.LastInsertId()
-		numRowsAffected, err := res.RowsAffected()
-	}
-}
-```
-# connection.go base package
-```go
-//Package connection handles all connections to the MySQL database(s)
-package connection
-
-import (
-	"database/sql"
-	"fmt"
-	_ "github.com/go-sql-driver/mysql"
-	"log"
-	"sync"
-)
-
-var (
-	err         error
-	connections *Connections
-)
-
-func init() {
-	connections = &Connections{
-		list: make(map[string]*sql.DB),
-	}
-}
-
-//Connections holds the list of database connections
-type Connections struct {
-	list map[string]*sql.DB
-	sync.Mutex
-}
-
-//Get returns a connection to a specific database. If the connection exists in the connections list AND is
-//still active, it will just return that connection. Otherwise, it will open a new connection to
-//the specified database and add it to the connections list.
-func Get(db string) *sql.DB {
-
-	connection := connections.list[db]
-	if connection != nil {
-		//determine if connection is still active
-		err = connection.Ping()
-		if err == nil {
-			return connection
-		}
-	}
-
-	con, err := sql.Open("mysql", fmt.Sprintf("root:Jstevens120)@tcp(localhost:3306)/%s?parseTime=true", db))
-	sql.Open("mysql", fmt.Sprintf("root:Jstevens120)@tcp(localhost:3306)/%s?parseTime=true", db))
-	if err != nil {
-		//do whatever tickles your fancy here
-		log.Fatalln("Connection Error to DB [", db, "]", err.Error())
-	}
-	con.SetMaxIdleConns(10)
-	con.SetMaxOpenConns(500)
-
-	connections.Lock()
-	connections.list[db] = con
-	connections.Unlock()
-
-	return con
 }
 ```
