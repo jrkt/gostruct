@@ -443,7 +443,7 @@ Loop:
 	string1 += "\n}"
 	nilStruct += "\n}\n"
 
-	optionThreshold := 1
+	optionThreshold := 3
 
 	if nullableCnt > optionThreshold {
 		string1 += nilStruct
