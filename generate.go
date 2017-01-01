@@ -3,11 +3,9 @@ Package gostruct is an ORM that builds a package for a specific MySQL database t
 
 A package with the underlying struct of the table will be created in the $GOPATH/src/models/{table} directory along with several methods to handle common requests. The files that are created in the package, for a 'User' model (for example) would be:
 
-CRUX_User.go - CRUD operations and common ReadBy functions. It also validates any enum/set data type with the value passed to ensure it is one of the required fields
+User_base.go - CRUD operations and common ReadBy functions. It also validates any enum/set data type with the value passed to ensure it is one of the required fields
 
-DAO_User.go - Custom functions used to return User object(s)
-
-BO_User.go - Custom methods to be called on the object receiver
+User_extended.go - Custom functions & methods
 
 User_test.go - Serves as a base for your unit testing
 
@@ -52,8 +50,6 @@ import (
 
 	//allows pulling from information_schema database
 	"utils/str"
-
-	_ "github.com/go-sql-driver/mysql"
 )
 
 //TableObj is the result set returned from the MySQL information_schema that
@@ -341,13 +337,12 @@ Loop:
 			rows, err := con.Query("SELECT DISTINCT(`" + object.Name + "`) FROM " + gs.Database + "." + table)
 			if err != nil {
 				return err
-			} else {
-				for rows.Next() {
-					var uObj uniqueValues
-					rows.Scan(&uObj.Value)
-					if uObj.Value.String != "0" && uObj.Value.String != "1" && uObj.Value.String != "" {
-						isBool = false
-					}
+			}
+			for rows.Next() {
+				var uObj uniqueValues
+				rows.Scan(&uObj.Value)
+				if uObj.Value.String != "0" && uObj.Value.String != "1" && uObj.Value.String != "" {
+					isBool = false
 				}
 			}
 			if isBool {
