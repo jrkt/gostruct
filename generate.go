@@ -47,9 +47,6 @@ import (
 	"log"
 	"os"
 	"strings"
-
-	//allows pulling from information_schema database
-	"utils/str"
 )
 
 //TableObj is the result set returned from the MySQL information_schema that
@@ -421,15 +418,15 @@ Loop:
 					var ` + name + " *" + dataType
 				nullableHandlers += `
 				if ` + name + ` != nil {
-					` + "obj." + str.UppercaseFirst(object.Name) + ` = *` + name + `
+					` + "obj." + uppercaseFirst(object.Name) + ` = *` + name + `
 				}`
 				nilString2 += ", &" + name
-				scanStr2 += ", &obj." + str.UppercaseFirst(object.Name) + nilExtension
+				scanStr2 += ", &obj." + uppercaseFirst(object.Name) + nilExtension
 			} else {
-				nilString2 += ", &obj." + str.UppercaseFirst(object.Name)
-				scanStr2 += ", &obj." + str.UppercaseFirst(object.Name)
+				nilString2 += ", &obj." + uppercaseFirst(object.Name)
+				scanStr2 += ", &obj." + uppercaseFirst(object.Name)
 			}
-			string2 += ", &obj." + str.UppercaseFirst(object.Name)
+			string2 += ", &obj." + uppercaseFirst(object.Name)
 		}
 
 		defaultVal := ""
@@ -440,8 +437,8 @@ Loop:
 				defaultVal = object.Default.String
 			}
 		}
-		string1 += "\n\t" + str.UppercaseFirst(object.Name) + "\t\t" + dataType + "\t\t`column:\"" + object.Name + "\" default:\"" + defaultVal + "\" type:\"" + object.ColumnType + "\" key:\"" + object.Key + "\" null:\"" + object.IsNullable + "\" extra:\"" + object.Extra.String + "\"`"
-		nilStruct += "\n\t" + str.UppercaseFirst(object.Name) + "\t\t" + nilDataType
+		string1 += "\n\t" + uppercaseFirst(object.Name) + "\t\t" + dataType + "\t\t`column:\"" + object.Name + "\" default:\"" + defaultVal + "\" type:\"" + object.ColumnType + "\" key:\"" + object.Key + "\" null:\"" + object.IsNullable + "\" extra:\"" + object.Extra.String + "\"`"
+		nilStruct += "\n\t" + uppercaseFirst(object.Name) + "\t\t" + nilDataType
 	}
 	string1 += "\n}"
 	nilStruct += "\n}\n"
@@ -519,14 +516,14 @@ func (obj *` + tableNaming + `) Save() (sql.Result, error) {
 
 			string1 += `
 			newRecord := false
-			if utils.Empty(obj.` + str.UppercaseFirst(primaryKeys[0]) + `) {
+			if utils.Empty(obj.` + uppercaseFirst(primaryKeys[0]) + `) {
 				newRecord = true
 			}
 
 			res, err := Exec(query, newArgs...)
 			if err == nil && newRecord {
 				id, _ := res.LastInsertId()
-				obj.` + str.UppercaseFirst(primaryKeys[0]) + ` = ` + insertIdStr + `
+				obj.` + uppercaseFirst(primaryKeys[0]) + ` = ` + insertIdStr + `
 			}
 			return res, err`
 		}
@@ -538,7 +535,7 @@ func (obj *` + tableNaming + `) Save() (sql.Result, error) {
 				whereStrQueryValues += ","
 			}
 			whereStrQuery += ` ` + primaryKeys[k] + ` = ?`
-			whereStrQueryValues += ` obj.` + str.UppercaseFirst(primaryKeys[k])
+			whereStrQueryValues += ` obj.` + uppercaseFirst(primaryKeys[k])
 		}
 
 		string1 += `
@@ -625,7 +622,7 @@ func ReadByQuery(query string, args ...interface{}) ([]*` + tableNaming + `, err
 		string1 += "var obj " + strings.ToLower(table)
 	}
 	string1 += `
-			err = rows.Scan(&obj.` + str.UppercaseFirst(objects[0].Name) + scanStr + `)
+			err = rows.Scan(&obj.` + uppercaseFirst(objects[0].Name) + scanStr + `)
 			if err != nil {
 				return objects, err
 			}`
@@ -635,7 +632,7 @@ func ReadByQuery(query string, args ...interface{}) ([]*` + tableNaming + `, err
 		objects = append(objects, &obj)`
 	} else {
 		string1 += `
-		objects = append(objects, &` + tableNaming + `{obj.` + str.UppercaseFirst(objects[0].Name) + scanStr2 + `})`
+		objects = append(objects, &` + tableNaming + `{obj.` + uppercaseFirst(objects[0].Name) + scanStr2 + `})`
 	}
 
 	string1 += `
@@ -668,7 +665,7 @@ func ReadOneByQuery(query string, args ...interface{}) (*` + tableNaming + `, er
 		string1 += nullableDeclarations
 	}
 	string1 += `
-	err = con.QueryRow(query, args...).Scan(&obj.` + str.UppercaseFirst(objects[0].Name) + scanStr + `)
+	err = con.QueryRow(query, args...).Scan(&obj.` + uppercaseFirst(objects[0].Name) + scanStr + `)
 	if err != nil && err != sql.ErrNoRows {
 		return &` + tableNaming + `{}, err
 	}`
@@ -680,7 +677,7 @@ func ReadOneByQuery(query string, args ...interface{}) (*` + tableNaming + `, er
 	} else {
 		string1 += `
 
-		return &` + tableNaming + `{obj.` + str.UppercaseFirst(objects[0].Name) + scanStr2 + `}, nil
+		return &` + tableNaming + `{obj.` + uppercaseFirst(objects[0].Name) + scanStr2 + `}, nil
 		`
 	}
 	string1 += `
