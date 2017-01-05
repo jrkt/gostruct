@@ -41,7 +41,7 @@ A package with a struct of the table and several methods to handle common reques
     - This also validates any enum/set data type with the value passed to ensure it is one of the required fields
 - User_extended.go (this will hold any custom methods used to return User object(s))
 - User_test.go to serve as a base for your unit testing
-- examples_test.go with auto-generated example methods for godoc readability. 
+<!--- examples_test.go with auto-generated example methods for godoc readability. -->
 
 It will also generate a connection package to share connection(s) to prevent multiple open database connections.
 
@@ -66,6 +66,10 @@ port
 all
 
     If this option is passed in as "true", it will run for all tables based on the database
+    
+nameFuncs
+
+    Set this flag to true if you want the struct name included in the auto-generated method/function names
 
 # usage
 ```go

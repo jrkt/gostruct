@@ -8,12 +8,13 @@ import (
 
 //Gostruct is the main holding object for connection information
 type Gostruct struct {
-	Table    string
-	Database string
-	Host     string
-	Port     string
-	Username string
-	Password string
+	Table     string
+	Database  string
+	Host      string
+	Port      string
+	Username  string
+	Password  string
+	NameFuncs bool
 }
 
 //Generate table model for mysql
@@ -25,10 +26,12 @@ func (gs *Gostruct) Generate() error {
 	host := flag.String("host", "", "DB Host")
 	port := flag.String("port", "", "DB Port (MySQL 3306 is default)")
 	all := flag.String("all", "", "Run for All Tables")
+	nameFuncs := flag.Bool("nameFuncs", false, "Whether to include the struct name in the function signature")
 	flag.Parse()
 
 	gs.Database = *db
 	gs.Host = *host
+	gs.NameFuncs = *nameFuncs
 	gs.setPort(*port)
 
 	if *all == "true" {

@@ -175,7 +175,6 @@ func (gs *Gostruct) handleTable(table string) error {
 	log.Println("Generating Models for: " + table)
 
 	con, err = sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", gs.Username, gs.Password, gs.Host, gs.Port, gs.Database))
-
 	if err != nil {
 		return err
 	}
@@ -185,6 +184,8 @@ func (gs *Gostruct) handleTable(table string) error {
 	var object TableObj
 	var objects []TableObj = make([]TableObj, 0)
 	var columns []string
+
+	tableNaming := uppercaseFirst(table)
 
 	if err != nil {
 		return err
@@ -218,7 +219,7 @@ func (gs *Gostruct) handleTable(table string) error {
 	}
 
 	//create directory
-	dir := GOPATH + "/src/models/" + uppercaseFirst(table) + "/"
+	dir := GOPATH + "/src/models/" + tableNaming + "/"
 	if !exists(dir) {
 		err := os.Mkdir(dir, 0777)
 		if err != nil {
@@ -259,7 +260,7 @@ func (gs *Gostruct) handleTable(table string) error {
 	return nil
 }
 
-//Builds CRUX_{table}.go file with main struct and CRUD functionality
+//Builds {table}_base.go file with main struct and CRUD functionality
 func (gs *Gostruct) buildBase(objects []TableObj, table string) error {
 	exampleIdStr = ""
 	exampleColumn = ""
@@ -270,6 +271,10 @@ func (gs *Gostruct) buildBase(objects []TableObj, table string) error {
 	dir := GOPATH + "/src/models/" + tableNaming + "/"
 
 	var usedColumns []usedColumn
+	var funcName string
+	if gs.NameFuncs {
+		funcName = tableNaming
+	}
 	initialString := `//The ` + tableNaming + ` package serves as the base structure for the ` + table + ` table
 //
 //Package ` + tableNaming + ` contains base methods and CRUD functionality to
@@ -282,6 +287,7 @@ import (
 	"database/sql"
 	"strings"
 	"errors"
+	"fmt"
 	"connection"
 	"reflect"
 	"utils"`
@@ -420,13 +426,13 @@ Loop:
 					var ` + name + " " + dataType
 				nullableHandlers += `
 				if ` + name + ` != nil {
-					` + "obj." + uppercaseFirst(object.Name) + ` = *` + name + `
+					` + "obj." + uppercaseFirst(object.Name) + ` = ` + name + `
 				}`
 				nilString2 += ", &" + name
 				scanStr2 += ", &obj." + uppercaseFirst(object.Name) + nilExtension
 			} else {
 				nilString2 += ", &obj." + uppercaseFirst(object.Name)
-				scanStr2 += ", &obj." + uppercaseFirst(object.Name)
+				scanStr2 += ", obj." + uppercaseFirst(object.Name)
 			}
 			string2 += ", &obj." + uppercaseFirst(object.Name)
 		}
@@ -473,7 +479,7 @@ Loop:
 		string1 += `
 
 //Save runs an INSERT..UPDATE ON DUPLICATE KEY and validates each value being saved
-func (obj *` + tableNaming + `) Save() (sql.Result, error) {
+func (obj *` + tableNaming + `) ` + funcName + `Save() (sql.Result, error) {
 	v := reflect.ValueOf(obj).Elem()
 	objType := v.Type()
 
@@ -504,7 +510,7 @@ func (obj *` + tableNaming + `) Save() (sql.Result, error) {
 		if len(primaryKeys) > 1 {
 			string1 += `
 
-	return Exec(query, newArgs...)`
+	return ` + funcName + `Exec(query, newArgs...)`
 		} else {
 			var insertIdStr string
 			switch primaryKeyTypes[0] {
@@ -522,7 +528,7 @@ func (obj *` + tableNaming + `) Save() (sql.Result, error) {
 				newRecord = true
 			}
 
-			res, err := Exec(query, newArgs...)
+			res, err := ` + funcName + `Exec(query, newArgs...)
 			if err == nil && newRecord {
 				id, _ := res.LastInsertId()
 				obj.` + uppercaseFirst(primaryKeys[0]) + ` = ` + insertIdStr + `
@@ -544,8 +550,8 @@ func (obj *` + tableNaming + `) Save() (sql.Result, error) {
 }
 
 //Delete removes a record from the database according to the primary key
-func (obj *` + tableNaming + `) Delete() (sql.Result, error) {
-	return Exec("DELETE FROM ` + table + ` WHERE` + whereStrQuery + `", ` + whereStrQueryValues + `)
+func (obj *` + tableNaming + `) ` + funcName + `Delete() (sql.Result, error) {
+	return ` + funcName + `Exec("DELETE FROM ` + table + ` WHERE` + whereStrQuery + `", ` + whereStrQueryValues + `)
 }
 `
 		paramStr, whereStrValues := "", ""
@@ -582,31 +588,50 @@ func (obj *` + tableNaming + `) Delete() (sql.Result, error) {
 		//create ReadByKey method
 		string1 += `
 //ReadByKey returns a single pointer to a(n) ` + tableNaming + `
-func ReadByKey(` + paramStr + `) (*` + tableNaming + `, error) {
-	return ReadOneByQuery("SELECT * FROM ` + table + ` WHERE` + whereStrQuery + `", ` + whereStrValues + `)
+func Read` + funcName + `ByKey(` + paramStr + `) (*` + tableNaming + `, error) {
+	return ReadOne` + funcName + `ByQuery("SELECT * FROM ` + table + ` WHERE` + whereStrQuery + `", ` + whereStrValues + `)
 }`
 	}
 
 	string1 += `
 
 //ReadAll returns all records in the table
-func ReadAll(options connection.QueryOptions) ([]*` + tableNaming + `, error) {
-	return ReadByQuery("SELECT * FROM ` + table + `", options)
+func ReadAll` + funcName + `(options ...connection.QueryOptions) ([]*` + tableNaming + `, error) {
+	return Read` + funcName + `ByQuery("SELECT * FROM ` + table + `", options)
 }`
 
 	string1 += `
 
 //ReadByQuery returns an array of ` + tableNaming + ` pointers
-func ReadByQuery(query string, args ...interface{}) ([]*` + tableNaming + `, error) {
+func Read` + funcName + `ByQuery(query string, args ...interface{}) ([]*` + tableNaming + `, error) {
 	var objects []*` + tableNaming + `
 	var err error
+	var argss []interface{}
+	for _, arg := range args {
+		switch t := arg.(type) {
+		case []connection.QueryOptions:
+			if len(t) > 0 {
+				options := t[0]
+				orderBy := options.OrderBy
+				if orderBy != "" {
+					query += fmt.Sprintf(" ORDER BY %s", orderBy)
+				}
+				limit := options.Limit
+				if limit != 0 {
+					query += fmt.Sprintf(" LIMIT %d", limit)
+				}
+			}
+		default:
+			argss = append(argss, t)
+		}
+	}
 
 	con, err := connection.Get("` + gs.Database + `")
 	if err != nil {
 		return objects, errors.New("connection failed")
 	}
 	query = strings.Replace(query, "'", "\"", -1)
-	rows, err := con.Query(query, args...)
+	rows, err := con.Query(query, argss...)
 	if err != nil {
 		return objects, err
 	} else {
@@ -649,7 +674,7 @@ func ReadByQuery(query string, args ...interface{}) ([]*` + tableNaming + `, err
 }
 
 //ReadOneByQuery returns a single pointer to a(n) ` + tableNaming + `
-func ReadOneByQuery(query string, args ...interface{}) (*` + tableNaming + `, error) {`
+func ReadOne` + funcName + `ByQuery(query string, args ...interface{}) (*` + tableNaming + `, error) {`
 	if nullableCnt <= optionThreshold {
 		string1 += "var obj " + tableNaming
 	} else {
@@ -686,7 +711,7 @@ func ReadOneByQuery(query string, args ...interface{}) (*` + tableNaming + `, er
 }
 
 //Exec allows for update queries
-func Exec(query string, args ...interface{}) (sql.Result, error) {
+func ` + funcName + `Exec(query string, args ...interface{}) (sql.Result, error) {
 	con, err := connection.Get("` + gs.Database + `")
 	if err != nil {
 		var result sql.Result
@@ -712,14 +737,14 @@ func Exec(query string, args ...interface{}) (sql.Result, error) {
 	return nil
 }
 
-//Builds DAO_{table}.go file for custom Data Access Object methods
+//Builds {table}_extends.go file for custom Data Access Object methods
 func (gs *Gostruct) buildExtended(table string) error {
 	tableNaming := uppercaseFirst(table)
-	dir := GOPATH + "/src/models/" + uppercaseFirst(table) + "/"
+	dir := GOPATH + "/src/models/" + tableNaming + "/"
 	daoFilePath := dir + tableNaming + "_extended.go"
 
 	if !exists(daoFilePath) {
-		contents := "package " + uppercaseFirst(table) + "\n\n//Methods Here"
+		contents := "package " + tableNaming + "\n\n//Methods Here"
 		err = writeFile(daoFilePath, contents, false)
 		if err != nil {
 			return err
@@ -737,7 +762,7 @@ func (gs *Gostruct) buildExtended(table string) error {
 //Builds {table}_test.go file
 func (gs *Gostruct) buildTestFile(table string) error {
 	tableNaming := uppercaseFirst(table)
-	dir := GOPATH + "/src/models/" + uppercaseFirst(table) + "/"
+	dir := GOPATH + "/src/models/" + tableNaming + "/"
 	testFilePath := dir + tableNaming + "_test.go"
 
 	if !exists(testFilePath) {
@@ -767,7 +792,7 @@ func (gs *Gostruct) buildTestFile(table string) error {
 //Builds {table}_test.go file
 func (gs *Gostruct) buildExamplesFile(table string) error {
 	tableNaming := uppercaseFirst(table)
-	dir := GOPATH + "/src/models/" + uppercaseFirst(table) + "/"
+	dir := GOPATH + "/src/models/" + tableNaming + "/"
 	examplesFilePath := dir + "examples_test.go"
 
 	if !exists(examplesFilePath) {
