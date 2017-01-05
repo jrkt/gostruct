@@ -94,6 +94,9 @@ var (
 //initialize global GOPATH
 func init() {
 	GOPATH = os.Getenv("GOPATH")
+	if last := len(GOPATH) - 1; last >= 0 && GOPATH[last] == '/' {
+		GOPATH = GOPATH[:last]
+	}
 }
 
 //Run generates a package for a single table
@@ -475,6 +478,43 @@ Loop:
 	}
 
 	bs := "`"
+
+	if len(primaryKeys) == 1 {
+		string1 += `
+
+//TableName returns the name of the mysql table
+func (obj *` + tableNaming + `) TableName() string {
+	return "` + table + `"
+}
+
+//PrimaryKeyInfo returns the string value of the primary key column and the corresponding value for the receiver
+func (obj *` + tableNaming + `) PrimaryKeyInfo() (string, interface{}) {
+	val := reflect.ValueOf(obj).Elem()
+	var objTypeId interface{}
+	for i := 0; i < val.NumField(); i++ {
+		valueField := val.Field(i)
+		column := val.Type().Field(i).Tag.Get("column")
+		if "` + primaryKeys[0] + `" == column {
+			switch valueField.Kind() {
+			case reflect.Int:
+				objTypeId = valueField.Interface().(int)
+			case reflect.Int64:
+				objTypeId = valueField.Interface().(int64)
+			case reflect.String:
+				objTypeId = valueField.Interface().(string)
+			}
+		}
+	}
+
+	return "` + primaryKeys[0] + `", objTypeId
+}
+
+//TypeInfo implements mysql.Info interface to allow for retrieving type/typeId for any db model
+func (obj *` + tableNaming + `) TypeInfo() (string, interface{}) {
+	_, pkVal := obj.PrimaryKeyInfo()
+	return "` + table + `", pkVal
+}`
+	}
 
 	if len(primaryKeys) > 0 {
 		string1 += `
