@@ -48,6 +48,7 @@ import (
 	"os"
 	"strings"
 
+	//imported to allow mysql driver to be used
 	_ "github.com/go-sql-driver/mysql"
 )
 
