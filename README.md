@@ -164,12 +164,11 @@ import (
 	"connection"
 	"database/sql"
 	"errors"
-	"github.com/go-sql-driver/mysql"
+	"fmt"
 	"reflect"
 	"strings"
 	"time"
 	"utils"
-	"utils/value"
 )
 
 //User is the structure of the home table
@@ -184,18 +183,6 @@ type User struct {
 	SignupDate      *time.Time `column:"signupDate" default:"" type:"datetime" key:"" null:"YES" extra:""`
 	TerminationDate *time.Time `column:"terminationDate" default:"" type:"datetime" key:"" null:"YES" extra:""`
 	Weight          *int64     `column:"weight" default:"" type:"int(11)" key:"" null:"YES" extra:""`
-}
-
-//user is the nilable structure of the home table
-type user struct {
-	Id              int64
-	Name            string
-	Email           string
-	Income          float64
-	IsActive        bool
-	SignupDate      mysql.NullTime
-	TerminationDate mysql.NullTime
-	Weight          sql.NullInt64
 }
 
 //Save runs an INSERT..UPDATE ON DUPLICATE KEY and validates each value being saved
@@ -227,7 +214,7 @@ func (obj *User) Save() (sql.Result, error) {
 	query += " (" + strings.Join(columnArr, ", ") + ") VALUES (" + strings.Join(q, ", ") + ") ON DUPLICATE KEY UPDATE " + updateStr
 	newArgs := append(args, args...)
 	newRecord := false
-	if value.Empty(obj.Id) {
+	if utils.Empty(obj.Id) {
 		newRecord = true
 	}
 
@@ -250,7 +237,7 @@ func ReadByKey(id int64) (*User, error) {
 }
 
 //ReadAll returns all records in the table
-func ReadAll(options connection.QueryOptions) ([]*User, error) {
+func ReadAll(options ...connection.QueryOptions) ([]*User, error) {
 	return ReadByQuery("SELECT * FROM User", options)
 }
 
@@ -258,13 +245,32 @@ func ReadAll(options connection.QueryOptions) ([]*User, error) {
 func ReadByQuery(query string, args ...interface{}) ([]*User, error) {
 	var objects []*User
 	var err error
+	var argss []interface{}
+	for _, arg := range args {
+		switch t := arg.(type) {
+		case []connection.QueryOptions:
+			if len(t) > 0 {
+				options := t[0]
+				orderBy := options.OrderBy
+				if orderBy != "" {
+					query += fmt.Sprintf(" ORDER BY %s", orderBy)
+				}
+				limit := options.Limit
+				if limit != 0 {
+					query += fmt.Sprintf(" LIMIT %d", limit)
+				}
+			}
+		default:
+			argss = append(argss, t)
+		}
+	}
 
 	con, err := connection.Get("main")
 	if err != nil {
 		return objects, errors.New("connection failed")
 	}
 	query = strings.Replace(query, "'", "\"", -1)
-	rows, err := con.Query(query, args...)
+	rows, err := con.Query(query, argss...)
 	if err != nil {
 		return objects, err
 	} else {
@@ -275,12 +281,24 @@ func ReadByQuery(query string, args ...interface{}) ([]*User, error) {
 
 		defer rows.Close()
 		for rows.Next() {
-			var obj user
-			err = rows.Scan(&obj.Id, &obj.Name, &obj.Email, &obj.Income, &obj.IsActive, &obj.SignupDate, &obj.TerminationDate, &obj.Weight)
+			var obj User
+			var signupdate *time.Time
+			var terminationdate *time.Time
+			var weight *int64
+			err = rows.Scan(&obj.Id, &obj.Name, &obj.Email, &obj.Income, &obj.IsActive, &signupdate, &terminationdate, &weight)
 			if err != nil {
 				return objects, err
 			}
-			objects = append(objects, &User{obj.Id, &obj.Name, &obj.Email, &obj.Income, &obj.IsActive, &obj.SignupDate.Time, &obj.TerminationDate.Time, &obj.Weight.Int64})
+			if signupdate != nil {
+				obj.SignupDate = signupdate
+			}
+			if terminationdate != nil {
+				obj.TerminationDate = terminationdate
+			}
+			if weight != nil {
+				obj.Weight = weight
+			}
+			objects = append(objects, &obj)
 		}
 	}
 
@@ -293,20 +311,31 @@ func ReadByQuery(query string, args ...interface{}) ([]*User, error) {
 
 //ReadOneByQuery returns a single pointer to a(n) User
 func ReadOneByQuery(query string, args ...interface{}) (*User, error) {
-	var obj user
+	var obj User
 
 	con, err := connection.Get("main")
 	if err != nil {
 		return &User{}, errors.New("connection failed")
 	}
 	query = strings.Replace(query, "'", "\"", -1)
-	err = con.QueryRow(query, args...).Scan(&obj.Id, &obj.Name, &obj.Email, &obj.Income, &obj.IsActive, &obj.SignupDate, &obj.TerminationDate, &obj.Weight)
+	var signupdate *time.Time
+	var terminationdate *time.Time
+	var weight *int64
+	err = con.QueryRow(query, args...).Scan(&obj.Id, &obj.Name, &obj.Email, &obj.Income, &obj.IsActive, &signupdate, &terminationdate, &weight)
 	if err != nil && err != sql.ErrNoRows {
 		return &User{}, err
 	}
+	if signupdate != nil {
+		obj.SignupDate = signupdate
+	}
+	if terminationdate != nil {
+		obj.TerminationDate = terminationdate
+	}
+	if weight != nil {
+		obj.Weight = weight
+	}
 
-	return &User{obj.Id, &obj.Name, &obj.Email, &obj.Income, &obj.IsActive, &obj.SignupDate.Time, &obj.TerminationDate.Time, &obj.Weight.Int64}, nil
-
+	return &obj, err
 }
 
 //Exec allows for update queries
@@ -318,6 +347,7 @@ func Exec(query string, args ...interface{}) (sql.Result, error) {
 	}
 	return con.Exec(query, args...)
 }
+
 ```
 
 # User_test.go - sample skeleton file generated
