@@ -46,8 +46,10 @@ A package with a struct of the table and several methods to handle common reques
 It will also generate a connection package to share connection(s) to prevent multiple open database connections. The generated package(s) implement the connection.Info interface that allows you derive the 
 type and typeId (table & primary key) from any object by simple calling:
 
-    user, _ := User.ReadByKey(12345)
-    table, pk := user.TypeInfo()
+```go
+user, _ := User.ReadByKey(12345)
+table, pk := user.TypeInfo()
+```
 
 # flags 
 
