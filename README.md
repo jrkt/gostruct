@@ -22,8 +22,8 @@ import (
 
 func main() {
 	gs := new(gostruct.Gostruct)
-	gs.Username = "root"
-	gs.Password = "Jstevens120)"
+	gs.Username = "{username}"
+	gs.Password = "{password}"
 	err := gs.Generate()
 	if err != nil {
 		println("Generate Error:", err)
