@@ -290,7 +290,7 @@ package ` + tableNaming
 import (
 	"database/sql"
 	"strings"
-	"errors"
+	"github.com/pkg/errors"
 	"fmt"
 	"connection"
 	"reflect"
@@ -574,6 +574,10 @@ func (obj *` + tableNaming + `) ` + funcName + `Save() (sql.Result, error) {
 				id, _ := res.LastInsertId()
 				obj.` + uppercaseFirst(primaryKeys[0]) + ` = ` + insertIdStr + `
 			}
+			if err != nil {
+				err = errors.Wrap(err, "save failed for ` + table + `")
+			}
+
 			return res, err`
 		}
 
@@ -663,22 +667,21 @@ func Read` + funcName + `ByQuery(query string, args ...interface{}) ([]*` + tabl
 				}
 			}
 		default:
-			argss = append(argss, t)
-		}
+			argss = append(argss, t)		}
 	}
 
 	con, err := connection.Get("` + gs.Database + `")
 	if err != nil {
-		return objects, errors.New("connection failed")
+		return objects, errors.Wrap(err, "connection failed")
 	}
 	query = strings.Replace(query, "'", "\"", -1)
 	rows, err := con.Query(query, argss...)
 	if err != nil {
-		return objects, err
+		return objects, errors.Wrap(err, "query error")
 	} else {
 		rowsErr := rows.Err()
 		if rowsErr != nil {
-			return objects, err
+			return objects, errors.Wrap(err, "rows error")
 		}
 
 		defer rows.Close()
@@ -692,7 +695,7 @@ func Read` + funcName + `ByQuery(query string, args ...interface{}) ([]*` + tabl
 	string1 += `
 			err = rows.Scan(&obj.` + uppercaseFirst(objects[0].Name) + scanStr + `)
 			if err != nil {
-				return objects, err
+				return objects, errors.Wrap(err, "scan error")
 			}`
 	if nullableCnt <= optionThreshold {
 		string1 += nullableHandlers
@@ -708,7 +711,7 @@ func Read` + funcName + `ByQuery(query string, args ...interface{}) ([]*` + tabl
 	}
 
 	if len(objects) == 0 {
-		err = sql.ErrNoRows
+		err = errors.Wrap(sql.ErrNoRows, "no records found")
 	}
 
 	return objects, err
@@ -726,7 +729,7 @@ func ReadOne` + funcName + `ByQuery(query string, args ...interface{}) (*` + tab
 
 	con, err := connection.Get("` + gs.Database + `")
 	if err != nil {
-		return &` + tableNaming + `{}, errors.New("connection failed")
+		return &` + tableNaming + `{}, errors.Wrap(err, "connection failed")
 	}
 	query = strings.Replace(query, "'", "\"", -1)`
 	if nullableCnt <= optionThreshold {
@@ -735,7 +738,7 @@ func ReadOne` + funcName + `ByQuery(query string, args ...interface{}) (*` + tab
 	string1 += `
 	err = con.QueryRow(query, args...).Scan(&obj.` + uppercaseFirst(objects[0].Name) + scanStr + `)
 	if err != nil && err != sql.ErrNoRows {
-		return &` + tableNaming + `{}, err
+		return &` + tableNaming + `{}, errors.Wrap(err, "query/scan error")
 	}`
 	if nullableCnt <= optionThreshold {
 		string1 += nullableHandlers
@@ -756,7 +759,7 @@ func ` + funcName + `Exec(query string, args ...interface{}) (sql.Result, error)
 	con, err := connection.Get("` + gs.Database + `")
 	if err != nil {
 		var result sql.Result
-		return result, errors.New("connection failed")
+		return result, errors.Wrap(err, "connection failed")
 	}
 	return con.Exec(query, args...)
 }`
