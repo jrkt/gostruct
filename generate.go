@@ -729,7 +729,7 @@ func ReadOne` + funcName + `ByQuery(query string, args ...interface{}) (*` + tab
 
 	con, err := connection.Get("` + gs.Database + `")
 	if err != nil {
-		return &` + tableNaming + `{}, errors.Wrap(err, "connection failed")
+		return nil, errors.Wrap(err, "connection failed")
 	}
 	query = strings.Replace(query, "'", "\"", -1)`
 	if nullableCnt <= optionThreshold {
@@ -738,7 +738,7 @@ func ReadOne` + funcName + `ByQuery(query string, args ...interface{}) (*` + tab
 	string1 += `
 	err = con.QueryRow(query, args...).Scan(&obj.` + uppercaseFirst(objects[0].Name) + scanStr + `)
 	if err != nil && err != sql.ErrNoRows {
-		return &` + tableNaming + `{}, errors.Wrap(err, "query/scan error")
+		return nil, errors.Wrap(err, "query/scan error")
 	}`
 	if nullableCnt <= optionThreshold {
 		string1 += nullableHandlers
