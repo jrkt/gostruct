@@ -160,36 +160,83 @@ func main() {
 ```
 # User_base.go - sample file
 ```go
-//The User package serves as the base structure for the User table
+//The User package serves as the base structure for the user table
 //
 //Package User contains base methods and CRUD functionality to
-//interact with the User table in the main database
+//interact with the user table in the main database
 
 package User
 
 import (
 	"connection"
 	"database/sql"
-	"errors"
 	"fmt"
 	"reflect"
 	"strings"
 	"time"
-	"utils"
+	"utils/extract"
+
+	"github.com/go-sql-driver/mysql"
+	"github.com/pkg/errors"
 )
 
 //User is the structure of the home table
 //
 //This contains all columns that exist in the database
 type User struct {
-	Id              int64      `column:"id" default:"" type:"int(10) unsigned" key:"PRI" null:"NO" extra:"auto_increment"`
-	Name            string     `column:"name" default:"" type:"varchar(150)" key:"" null:"NO" extra:""`
-	Email           string     `column:"email" default:"" type:"varchar(250)" key:"" null:"NO" extra:""`
-	Income          float64    `column:"income" default:"0" type:"decimal(10,0)" key:"" null:"NO" extra:""`
-	IsActive        bool       `column:"isActive" default:"1" type:"tinyint(1)" key:"" null:"NO" extra:""`
-	SignupDate      *time.Time `column:"signupDate" default:"" type:"datetime" key:"" null:"YES" extra:""`
-	TerminationDate *time.Time `column:"terminationDate" default:"" type:"datetime" key:"" null:"YES" extra:""`
-	Weight          *int64     `column:"weight" default:"" type:"int(11)" key:"" null:"YES" extra:""`
+	Id            int64      `column:"id" default:"" type:"int(11)" key:"PRI" null:"NO" extra:"auto_increment"`
+	Age           *int64     `column:"age" default:"" type:"int(11)" key:"" null:"YES" extra:""`
+	Name          string     `column:"name" default:"" type:"varchar(45)" key:"" null:"NO" extra:""`
+	Occupation    *string    `column:"occupation" default:"" type:"varchar(45)" key:"" null:"YES" extra:""`
+	Active        bool       `column:"active" default:"" type:"tinyint(1)" key:"" null:"NO" extra:""`
+	Cool          *bool      `column:"cool" default:"0" type:"tinyint(1)" key:"" null:"YES" extra:""`
+	Signup_date   time.Time  `column:"signup_date" default:"CURRENT_TIMESTAMP" type:"timestamp" key:"" null:"NO" extra:"on update CURRENT_TIMESTAMP"`
+	Inactive_date *time.Time `column:"inactive_date" default:"" type:"timestamp" key:"" null:"YES" extra:""`
+}
+
+//user is the nilable structure of the home table
+type user struct {
+	Id            int64
+	Age           sql.NullInt64
+	Name          string
+	Occupation    sql.NullString
+	Active        bool
+	Cool          sql.NullBool
+	Signup_date   time.Time
+	Inactive_date mysql.NullTime
+}
+
+//TableName returns the name of the mysql table
+func (obj *User) TableName() string {
+	return "user"
+}
+
+//PrimaryKeyInfo returns the string value of the primary key column and the corresponding value for the receiver
+func (obj *User) PrimaryKeyInfo() (string, interface{}) {
+	val := reflect.ValueOf(obj).Elem()
+	var objTypeId interface{}
+	for i := 0; i < val.NumField(); i++ {
+		valueField := val.Field(i)
+		column := val.Type().Field(i).Tag.Get("column")
+		if "id" == column {
+			switch valueField.Kind() {
+			case reflect.Int:
+				objTypeId = valueField.Interface().(int)
+			case reflect.Int64:
+				objTypeId = valueField.Interface().(int64)
+			case reflect.String:
+				objTypeId = valueField.Interface().(string)
+			}
+		}
+	}
+
+	return "id", objTypeId
+}
+
+//TypeInfo implements mysql.Info interface to allow for retrieving type/typeId for any db model
+func (obj *User) TypeInfo() (string, interface{}) {
+	_, pkVal := obj.PrimaryKeyInfo()
+	return "user", pkVal
 }
 
 //Save runs an INSERT..UPDATE ON DUPLICATE KEY and validates each value being saved
@@ -202,9 +249,9 @@ func (obj *User) Save() (sql.Result, error) {
 	var q []string
 
 	updateStr := ""
-	query := "INSERT INTO User"
+	query := "INSERT INTO user"
 	for i := 0; i < v.NumField(); i++ {
-		val, err := utils.ValidateField(v.Field(i), objType.Field(i))
+		val, err := extract.GetValue(v.Field(i), objType.Field(i))
 		if err != nil {
 			return nil, err
 		}
@@ -221,7 +268,7 @@ func (obj *User) Save() (sql.Result, error) {
 	query += " (" + strings.Join(columnArr, ", ") + ") VALUES (" + strings.Join(q, ", ") + ") ON DUPLICATE KEY UPDATE " + updateStr
 	newArgs := append(args, args...)
 	newRecord := false
-	if utils.Empty(obj.Id) {
+	if obj.Id == 0 {
 		newRecord = true
 	}
 
@@ -230,22 +277,26 @@ func (obj *User) Save() (sql.Result, error) {
 		id, _ := res.LastInsertId()
 		obj.Id = id
 	}
+	if err != nil {
+		err = errors.Wrap(err, "save failed for user")
+	}
+
 	return res, err
 }
 
 //Delete removes a record from the database according to the primary key
 func (obj *User) Delete() (sql.Result, error) {
-	return Exec("DELETE FROM User WHERE id = ?", obj.Id)
+	return Exec("DELETE FROM user WHERE id = ?", obj.Id)
 }
 
 //ReadByKey returns a single pointer to a(n) User
 func ReadByKey(id int64) (*User, error) {
-	return ReadOneByQuery("SELECT * FROM User WHERE id = ?", id)
+	return ReadOneByQuery("SELECT * FROM user WHERE id = ?", id)
 }
 
 //ReadAll returns all records in the table
 func ReadAll(options ...connection.QueryOptions) ([]*User, error) {
-	return ReadByQuery("SELECT * FROM User", options)
+	return ReadByQuery("SELECT * FROM user", options)
 }
 
 //ReadByQuery returns an array of User pointers
@@ -274,43 +325,31 @@ func ReadByQuery(query string, args ...interface{}) ([]*User, error) {
 
 	con, err := connection.Get("main")
 	if err != nil {
-		return objects, errors.New("connection failed")
+		return objects, errors.Wrap(err, "connection failed")
 	}
 	query = strings.Replace(query, "'", "\"", -1)
 	rows, err := con.Query(query, argss...)
 	if err != nil {
-		return objects, err
+		return objects, errors.Wrap(err, "query error")
 	} else {
 		rowsErr := rows.Err()
 		if rowsErr != nil {
-			return objects, err
+			return objects, errors.Wrap(err, "rows error")
 		}
 
 		defer rows.Close()
 		for rows.Next() {
-			var obj User
-			var signupdate *time.Time
-			var terminationdate *time.Time
-			var weight *int64
-			err = rows.Scan(&obj.Id, &obj.Name, &obj.Email, &obj.Income, &obj.IsActive, &signupdate, &terminationdate, &weight)
+			var obj user
+			err = rows.Scan(&obj.Id, &obj.Age, &obj.Name, &obj.Occupation, &obj.Active, &obj.Cool, &obj.Signup_date, &obj.Inactive_date)
 			if err != nil {
-				return objects, err
+				return objects, errors.Wrap(err, "scan error")
 			}
-			if signupdate != nil {
-				obj.SignupDate = signupdate
-			}
-			if terminationdate != nil {
-				obj.TerminationDate = terminationdate
-			}
-			if weight != nil {
-				obj.Weight = weight
-			}
-			objects = append(objects, &obj)
+			objects = append(objects, &User{obj.Id, &obj.Age.Int64, obj.Name, &obj.Occupation.String, obj.Active, &obj.Cool.Bool, obj.Signup_date, &obj.Inactive_date.Time})
 		}
 	}
 
 	if len(objects) == 0 {
-		err = sql.ErrNoRows
+		err = errors.Wrap(sql.ErrNoRows, "no records found")
 	}
 
 	return objects, err
@@ -318,31 +357,20 @@ func ReadByQuery(query string, args ...interface{}) ([]*User, error) {
 
 //ReadOneByQuery returns a single pointer to a(n) User
 func ReadOneByQuery(query string, args ...interface{}) (*User, error) {
-	var obj User
+	var obj user
 
 	con, err := connection.Get("main")
 	if err != nil {
-		return &User{}, errors.New("connection failed")
+		return nil, errors.Wrap(err, "connection failed")
 	}
 	query = strings.Replace(query, "'", "\"", -1)
-	var signupdate *time.Time
-	var terminationdate *time.Time
-	var weight *int64
-	err = con.QueryRow(query, args...).Scan(&obj.Id, &obj.Name, &obj.Email, &obj.Income, &obj.IsActive, &signupdate, &terminationdate, &weight)
+	err = con.QueryRow(query, args...).Scan(&obj.Id, &obj.Age, &obj.Name, &obj.Occupation, &obj.Active, &obj.Cool, &obj.Signup_date, &obj.Inactive_date)
 	if err != nil && err != sql.ErrNoRows {
-		return &User{}, err
-	}
-	if signupdate != nil {
-		obj.SignupDate = signupdate
-	}
-	if terminationdate != nil {
-		obj.TerminationDate = terminationdate
-	}
-	if weight != nil {
-		obj.Weight = weight
+		return nil, errors.Wrap(err, "query/scan error")
 	}
 
-	return &obj, err
+	return &User{obj.Id, &obj.Age.Int64, obj.Name, &obj.Occupation.String, obj.Active, &obj.Cool.Bool, obj.Signup_date, &obj.Inactive_date.Time}, nil
+
 }
 
 //Exec allows for update queries
@@ -350,11 +378,10 @@ func Exec(query string, args ...interface{}) (sql.Result, error) {
 	con, err := connection.Get("main")
 	if err != nil {
 		var result sql.Result
-		return result, errors.New("connection failed")
+		return result, errors.Wrap(err, "connection failed")
 	}
 	return con.Exec(query, args...)
 }
-
 ```
 
 # User_test.go - sample skeleton file generated

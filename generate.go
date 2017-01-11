@@ -294,7 +294,7 @@ import (
 	"fmt"
 	"connection"
 	"reflect"
-	"utils"`
+	"utils/extract"`
 
 	nilStruct := `
 	//` + strings.ToLower(table) + ` is the nilable structure of the home table
@@ -443,11 +443,7 @@ Loop:
 
 		defaultVal := ""
 		if strings.ToLower(object.Default.String) != "null" {
-			if object.Default.String == "0" && object.IsNullable == "YES" {
-				defaultVal = ""
-			} else {
-				defaultVal = object.Default.String
-			}
+			defaultVal = object.Default.String
 		}
 		string1 += "\n\t" + uppercaseFirst(object.Name) + "\t\t" + dataType + "\t\t`column:\"" + object.Name + "\" default:\"" + defaultVal + "\" type:\"" + object.ColumnType + "\" key:\"" + object.Key + "\" null:\"" + object.IsNullable + "\" extra:\"" + object.Extra.String + "\"`"
 		nilStruct += "\n\t" + uppercaseFirst(object.Name) + "\t\t" + nilDataType
@@ -531,7 +527,7 @@ func (obj *` + tableNaming + `) ` + funcName + `Save() (sql.Result, error) {
 	updateStr := ""
 	query := "INSERT INTO ` + table + `"
 	for i := 0; i < v.NumField(); i++ {
-		val, err := utils.ValidateField(v.Field(i), objType.Field(i))
+		val, err := extract.GetValue(v.Field(i), objType.Field(i))
 		if err != nil {
 			return nil, err
 		}
@@ -565,7 +561,7 @@ func (obj *` + tableNaming + `) ` + funcName + `Save() (sql.Result, error) {
 
 			string1 += `
 			newRecord := false
-			if utils.Empty(obj.` + uppercaseFirst(primaryKeys[0]) + `) {
+			if obj.` + uppercaseFirst(primaryKeys[0]) + ` == 0 {
 				newRecord = true
 			}
 
@@ -975,20 +971,21 @@ func ExampleExec() {
 
 //Builds utils file
 func (gs *Gostruct) buildUtilsPackage() error {
-	filePath := GOPATH + "/src/utils/utils.go"
-	if !exists(GOPATH + "/src/utils") {
-		err = gs.CreateDirectory(GOPATH + "/src/utils")
+	filePath := GOPATH + "/src/utils/extract/utils.go"
+	if !exists(GOPATH + "/src/utils/extract") {
+		err = gs.CreateDirectory(GOPATH + "/src/utils/extract")
 		if err != nil {
 			return err
 		}
 	}
 
 	if !exists(filePath) {
-		contents := `package utils
+		contents := `package extract
 
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"time"
@@ -998,7 +995,7 @@ import (
 func Empty(val interface{}) bool {
 	empty := true
 	switch val.(type) {
-	case string, int, int64, float64, bool, time.Time:
+	case string, *string, int, *int, int64, *int64, float64, *float64, bool, *bool, time.Time, *time.Time:
 		empty = isEmpty(val)
 	default:
 		v := reflect.ValueOf(val).Elem()
@@ -1010,15 +1007,15 @@ func Empty(val interface{}) bool {
 			field := reflect.Value(v.Field(i))
 
 			switch field.Interface().(type) {
-			case string:
+			case string, *string:
 				value = field.String()
-			case int, int64:
+			case int, int64, *int, *int64:
 				value = field.Int()
-			case float64:
+			case float64, *float64:
 				value = field.Float()
-			case bool:
+			case bool, *bool:
 				value = field.Bool()
-			case time.Time:
+			case time.Time, *time.Time:
 				value = field.Interface()
 			default:
 				value = field.Interface()
@@ -1045,11 +1042,11 @@ func isEmpty(val interface{}) bool {
 			empty = true
 		}
 	case int64:
-		if int(int64(v)) == 0 {
+		if v == int64(0) {
 			empty = true
 		}
 	case float64:
-		if int(float64(v)) == 0 {
+		if v == float64(0) {
 			empty = true
 		}
 	case bool:
@@ -1060,12 +1057,17 @@ func isEmpty(val interface{}) bool {
 		if v.IsZero() {
 			empty = true
 		}
+	case *string, *int, *int64, *float64, *bool, *time.Time:
+		if v == nil {
+			empty = true
+		}
 	}
 	return empty
 }
 
-//Validate field value
-func ValidateField(val reflect.Value, field reflect.StructField) (interface{}, error) {
+func GetValue(val reflect.Value, field reflect.StructField) (interface{}, error) {
+	var value interface{}
+
 	if strings.Contains(string(field.Tag.Get("type")), "enum") {
 		var s string
 		switch t := val.Interface().(type) {
@@ -1081,7 +1083,28 @@ func ValidateField(val reflect.Value, field reflect.StructField) (interface{}, e
 		}
 	}
 
-	return GetFieldValue(val, field.Tag.Get("default")), nil
+	if val.Kind() == reflect.Interface && !val.IsNil() {
+		elm := val.Elem()
+		if elm.Kind() == reflect.Ptr && !elm.IsNil() && elm.Elem().Kind() == reflect.Ptr {
+			val = elm
+		}
+	}
+
+	if val.Kind() == reflect.Ptr {
+		if val.IsNil() {
+			value = nil
+		} else {
+			value = val.Elem().Interface()
+		}
+	} else {
+		value = val.Interface()
+	}
+
+	if isEmpty(value) {
+		value = field.Tag.Get("default")
+	}
+
+	return value, nil
 }
 
 //Returns string between two specified characters/strings
@@ -1099,54 +1122,7 @@ func InArray(char string, strings []string) bool {
 	return false
 }
 
-//Returns the value from the struct field value as an interface
-func GetFieldValue(field reflect.Value, defaultVal string) interface{} {
-	var val interface{}
-
-	switch t := field.Interface().(type) {
-	case string:
-		if !Empty(t) {
-			val = t
-		} else {
-			val = defaultVal
-		}
-	case int:
-		if !Empty(t) {
-			val = t
-		} else {
-			val = defaultVal
-		}
-	case int64:
-		if !Empty(t) {
-			val = t
-		} else {
-			val = defaultVal
-		}
-	case float64:
-		if !Empty(t) {
-			val = t
-		} else {
-			val = defaultVal
-		}
-	case bool:
-		if !Empty(t) {
-			val = t
-		} else {
-			val = defaultVal
-		}
-	case time.Time:
-		if !Empty(t) {
-			val = t
-		} else {
-			val = defaultVal
-		}
-	}
-
-	return val
-}
-
 `
-
 		err = writeFile(filePath, contents, false)
 		if err != nil {
 			return err
@@ -1169,6 +1145,8 @@ func (gs *Gostruct) buildConnectionPackage() error {
 		if err != nil {
 			return err
 		}
+	} else if exists(GOPATH + "/src/connection/connection.go") {
+		return nil
 	}
 
 	conFilePath := GOPATH + "/src/connection/connection.go"
@@ -1221,7 +1199,7 @@ func Get(db string) (*sql.DB, error) {
 		}
 	}
 
-	con, err := sql.Open("mysql", fmt.Sprintf("root:Jstevens120)@tcp(localhost:3306)/%s?parseTime=true", db))
+	con, err := sql.Open("mysql", fmt.Sprintf("` + gs.Username + `:` + gs.Password + `@tcp(` + gs.Host + `:3306)/%s?parseTime=true", db))
 	if err != nil {
 		//do whatever tickles your fancy here
 		log.Fatalln("Connection Error to DB [", db, "]", err.Error())
