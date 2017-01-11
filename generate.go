@@ -79,16 +79,11 @@ type uniqueValues struct {
 
 //Globals variables
 var (
-	err              error
-	con              *sql.DB
-	tables           []string
-	tablesDone       []string
-	primaryKey       string
-	GOPATH           string
-	exampleIdStr     string
-	exampleColumn    string
-	exampleColumnStr string
-	exampleOrderStr  string
+	err        error
+	con        *sql.DB
+	tablesDone []string
+	primaryKey string
+	GOPATH     string
 )
 
 //initialize global GOPATH
@@ -109,13 +104,13 @@ func (gs *Gostruct) Run(table string) error {
 		}
 	}
 
-	err = gs.buildConnectionPackage()
+	err = gs.buildConnectionPkg()
 	if err != nil {
 		return err
 	}
 
 	//handle utils file
-	err = gs.buildUtilsPackage()
+	err = gs.buildExtractPkg()
 	if err != nil {
 		return err
 	}
@@ -208,18 +203,8 @@ func (gs *Gostruct) handleTable(table string) error {
 	}
 	defer rows1.Close()
 
-	primaryKey = ""
 	if len(objects) == 0 {
 		return errors.New("No results for table: " + table)
-	}
-
-	//get PrimaryKey
-	for i := 0; i < len(objects); i++ {
-		object := objects[i]
-		if object.Key == "PRI" {
-			primaryKey = object.Name
-			break
-		}
 	}
 
 	//create directory
@@ -250,13 +235,7 @@ func (gs *Gostruct) handleTable(table string) error {
 	}
 
 	//handle Test file
-	err = gs.buildTestFile(table)
-	if err != nil {
-		return err
-	}
-
-	//handle Example file
-	err = gs.buildExamplesFile(table)
+	err = gs.buildTest(table)
 	if err != nil {
 		return err
 	}
@@ -266,12 +245,8 @@ func (gs *Gostruct) handleTable(table string) error {
 
 //Builds {table}_base.go file with main struct and CRUD functionality
 func (gs *Gostruct) buildBase(objects []TableObj, table string) error {
-	exampleIdStr = ""
-	exampleColumn = ""
-	exampleColumnStr = ""
-	exampleOrderStr = ""
-
 	tableNaming := uppercaseFirst(table)
+	lowerTable := strings.ToLower(table)
 	dir := GOPATH + "/src/models/" + tableNaming + "/"
 
 	var usedColumns []usedColumn
@@ -279,9 +254,7 @@ func (gs *Gostruct) buildBase(objects []TableObj, table string) error {
 	if gs.NameFuncs {
 		funcName = tableNaming
 	}
-	initialString := `//The ` + tableNaming + ` package serves as the base structure for the ` + table + ` table
-//
-//Package ` + tableNaming + ` contains base methods and CRUD functionality to
+	initialString := `//Package ` + tableNaming + ` contains base methods and CRUD functionality to
 //interact with the ` + table + ` table in the ` + gs.Database + ` database
 
 package ` + tableNaming
@@ -297,14 +270,12 @@ import (
 	"utils/extract"`
 
 	nilStruct := `
-	//` + strings.ToLower(table) + ` is the nilable structure of the home table
-type ` + strings.ToLower(table) + " struct {"
+	//` + lowerTable + ` is the nilable structure of the home table
+type ` + lowerTable + " struct {"
 
 	string1 := `
 
 //` + tableNaming + ` is the structure of the home table
-//
-//This contains all columns that exist in the database
 type ` + tableNaming + " struct {"
 	string2, nilString2, scanStr2, nilExtension := "", "", "", ""
 	contents := ""
@@ -517,22 +488,22 @@ func (obj *` + tableNaming + `) TypeInfo() (string, interface{}) {
 
 //Save runs an INSERT..UPDATE ON DUPLICATE KEY and validates each value being saved
 func (obj *` + tableNaming + `) ` + funcName + `Save() (sql.Result, error) {
-	v := reflect.ValueOf(obj).Elem()
-	objType := v.Type()
-
 	var columnArr []string
 	var args []interface{}
 	var q []string
 
+	v := reflect.ValueOf(obj).Elem()
+	valType := v.Type()
+
 	updateStr := ""
 	query := "INSERT INTO ` + table + `"
 	for i := 0; i < v.NumField(); i++ {
-		val, err := extract.GetValue(v.Field(i), objType.Field(i))
+		val, err := extract.GetValue(v.Field(i), valType.Field(i))
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "field validation error")
 		}
 		args = append(args, val)
-		column := string(objType.Field(i).Tag.Get("column"))
+		column := string(valType.Field(i).Tag.Get("column"))
 		columnArr = append(columnArr, "` + bs + `"+column+"` + bs + `")
 		q = append(q, "?")
 		if i > 0 && updateStr != "" {
@@ -686,7 +657,7 @@ func Read` + funcName + `ByQuery(query string, args ...interface{}) ([]*` + tabl
 		string1 += "var obj " + tableNaming
 		string1 += nullableDeclarations
 	} else {
-		string1 += "var obj " + strings.ToLower(table)
+		string1 += "var obj " + lowerTable
 	}
 	string1 += `
 			err = rows.Scan(&obj.` + uppercaseFirst(objects[0].Name) + scanStr + `)
@@ -718,7 +689,7 @@ func ReadOne` + funcName + `ByQuery(query string, args ...interface{}) (*` + tab
 	if nullableCnt <= optionThreshold {
 		string1 += "var obj " + tableNaming
 	} else {
-		string1 += "var obj " + strings.ToLower(table)
+		string1 += "var obj " + lowerTable
 	}
 
 	string1 += `
@@ -800,7 +771,7 @@ func (gs *Gostruct) buildExtended(table string) error {
 }
 
 //Builds {table}_test.go file
-func (gs *Gostruct) buildTestFile(table string) error {
+func (gs *Gostruct) buildTest(table string) error {
 	tableNaming := uppercaseFirst(table)
 	dir := GOPATH + "/src/models/" + tableNaming + "/"
 	testFilePath := dir + tableNaming + "_test.go"
@@ -829,149 +800,9 @@ func (gs *Gostruct) buildTestFile(table string) error {
 	return nil
 }
 
-//Builds {table}_test.go file
-func (gs *Gostruct) buildExamplesFile(table string) error {
-	tableNaming := uppercaseFirst(table)
-	dir := GOPATH + "/src/models/" + tableNaming + "/"
-	examplesFilePath := dir + "examples_test.go"
-
-	if !exists(examplesFilePath) {
-		contents := `package ` + tableNaming + `_test
-
-import (
-	"fmt"
-	"models/` + tableNaming + `"
-	"database/sql"
-)
-
-func Example` + tableNaming + `_Save() {
-	//existing ` + strings.ToLower(table) + `
-	` + strings.ToLower(table) + `, err := ` + tableNaming + `.ReadByKey(` + exampleIdStr + `)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			//no results
-		} else {
-			//query or mysql error
-		}
-	} else {
-		` + strings.ToLower(table) + `.` + exampleColumnStr + `
-		_, err = ` + strings.ToLower(table) + `.Save()
-		if err != nil {
-			//Save failed
-		}
-	}
-
-	//new ` + strings.ToLower(table) + `
-	` + strings.ToLower(table) + ` = new(` + tableNaming + `.` + tableNaming + `)
-	res, err := ` + strings.ToLower(table) + `.Save()
-	if err != nil {
-		//save failed
-	} else {
-		lastInsertId, err := res.LastInsertId()
-		numRowsAffected, err := res.RowsAffected()
-	}
-}
-
-func Example` + tableNaming + `_Delete() {
-	` + strings.ToLower(table) + `, err := ` + tableNaming + `.ReadByKey(` + exampleIdStr + `)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			//no results
-		} else {
-			//query or mysql error
-		}
-	} else {
-		_, err = ` + strings.ToLower(table) + `.Delete()
-		if err != nil {
-			//Delete failed
-		}
-	}
-}
-
-func ExampleReadAll() {
-	` + strings.ToLower(table) + `s, err := ` + tableNaming + `.ReadAll("` + exampleOrderStr + `")
-	if err != nil {
-		if err == sql.ErrNoRows {
-			//no results
-		} else {
-			//query or mysql error
-		}
-	} else {
-		for _, user := range ` + strings.ToLower(table) + `s {
-			fmt.Println(` + strings.ToLower(table) + `)
-		}
-	}
-}
-
-func ExampleReadByKey() {
-	` + strings.ToLower(table) + `, err := ` + tableNaming + `.ReadByKey(` + exampleIdStr + `)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			//no results
-		} else {
-			//query or mysql error
-		}
-	} else {
-		//handle ` + strings.ToLower(table) + ` object
-		fmt.Println(` + strings.ToLower(table) + `)
-	}
-}
-
-func ExampleReadByQuery() {
-	` + strings.ToLower(table) + `s, err := ` + tableNaming + `.ReadByQuery("SELECT * FROM ` + table + ` WHERE ` + exampleColumn + ` = ? ORDER BY ` + exampleOrderStr + `", "some string")
-	if err != nil {
-		if err == sql.ErrNoRows {
-			//no results
-		} else {
-			//query or mysql error
-		}
-	} else {
-		for _, user := range ` + strings.ToLower(table) + `s {
-			fmt.Println(` + strings.ToLower(table) + `)
-		}
-	}
-}
-
-func ExampleReadOneByQuery() {
-	` + strings.ToLower(table) + `, err := ` + tableNaming + `.ReadOneByQuery("SELECT * FROM ` + table + ` WHERE ` + exampleColumn + ` = ? ORDER BY ` + exampleOrderStr + `", "some string")
-	if err != nil {
-		if err == sql.ErrNoRows {
-			//no results
-		} else {
-			//query or mysql error
-		}
-	} else {
-		//handle ` + strings.ToLower(table) + ` object
-		fmt.Println(` + strings.ToLower(table) + `)
-	}
-}
-
-func ExampleExec() {
-	res, err := ` + tableNaming + `.Exec("UPDATE ` + table + ` SET ` + exampleColumn + ` = ? WHERE id = ?", "some string", ` + exampleIdStr + `)
-	if err != nil {
-		//save failed
-	} else {
-		lastInsertId, err := res.LastInsertId()
-		numRowsAffected, err := res.RowsAffected()
-	}
-}`
-		err = writeFile(examplesFilePath, contents, false)
-		if err != nil {
-			return err
-		}
-	}
-
-	_, err := runCommand("go fmt " + examplesFilePath)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-//Builds utils file
-func (gs *Gostruct) buildUtilsPackage() error {
-	filePath := GOPATH + "/src/utils/extract/utils.go"
+//Builds extract package
+func (gs *Gostruct) buildExtractPkg() error {
+	filePath := GOPATH + "/src/utils/extract/extract.go"
 	if !exists(GOPATH + "/src/utils/extract") {
 		err = gs.CreateDirectory(GOPATH + "/src/utils/extract")
 		if err != nil {
@@ -985,50 +816,10 @@ func (gs *Gostruct) buildUtilsPackage() error {
 import (
 	"database/sql"
 	"errors"
-	"fmt"
 	"reflect"
 	"strings"
 	"time"
 )
-
-//Determine whether or not an object is empty
-func Empty(val interface{}) bool {
-	empty := true
-	switch val.(type) {
-	case string, *string, int, *int, int64, *int64, float64, *float64, bool, *bool, time.Time, *time.Time:
-		empty = isEmpty(val)
-	default:
-		v := reflect.ValueOf(val).Elem()
-		if v.String() == "<invalid Value>" {
-			return true
-		}
-		for i := 0; i < v.NumField(); i++ {
-			var value interface{}
-			field := reflect.Value(v.Field(i))
-
-			switch field.Interface().(type) {
-			case string, *string:
-				value = field.String()
-			case int, int64, *int, *int64:
-				value = field.Int()
-			case float64, *float64:
-				value = field.Float()
-			case bool, *bool:
-				value = field.Bool()
-			case time.Time, *time.Time:
-				value = field.Interface()
-			default:
-				value = field.Interface()
-			}
-
-			if !isEmpty(value) {
-				empty = false
-				break
-			}
-		}
-	}
-	return empty
-}
 
 func isEmpty(val interface{}) bool {
 	empty := false
@@ -1068,6 +859,7 @@ func isEmpty(val interface{}) bool {
 func GetValue(val reflect.Value, field reflect.StructField) (interface{}, error) {
 	var value interface{}
 
+	column := field.Tag.Get("column")
 	if strings.Contains(string(field.Tag.Get("type")), "enum") {
 		var s string
 		switch t := val.Interface().(type) {
@@ -1079,7 +871,7 @@ func GetValue(val reflect.Value, field reflect.StructField) (interface{}, error)
 		vals := Between(string(field.Tag.Get("type")), "enum('", "')")
 		arr := strings.Split(vals, "','")
 		if !InArray(s, arr) {
-			return nil, errors.New("Invalid value: '" + s + "' for column: " + string(field.Tag.Get("column")) + ". Possible values are: " + strings.Join(arr, ", "))
+			return nil, errors.New("Invalid value: '" + s + "' for column: " + column + ". Possible values are: " + strings.Join(arr, ", "))
 		}
 	}
 
@@ -1100,8 +892,11 @@ func GetValue(val reflect.Value, field reflect.StructField) (interface{}, error)
 		value = val.Interface()
 	}
 
-	if isEmpty(value) {
+	if isEmpty(value) && field.Tag.Get("key") != "PRI" {
 		value = field.Tag.Get("default")
+		if value == "" && field.Tag.Get("null") == "NO" {
+			return nil, errors.New("you must provide a value for column: " + column)
+		}
 	}
 
 	return value, nil
@@ -1139,7 +934,7 @@ func InArray(char string, strings []string) bool {
 
 //Builds main connection package for serving up all database connections
 //with a shared connection pool
-func (gs *Gostruct) buildConnectionPackage() error {
+func (gs *Gostruct) buildConnectionPkg() error {
 	if !exists(GOPATH + "/src/connection") {
 		err = gs.CreateDirectory(GOPATH + "/src/connection")
 		if err != nil {
