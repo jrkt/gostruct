@@ -6,10 +6,13 @@
 # gostruct
 Library to auto-generate packages and basic CRUD operations for a given MySQL database table.
 
+# dependencies
+
+    github.com/go-sql-driver/mysql
+    github.com/pkg/errors
+    
 # implementation
 
-    go get github.com/go-sql-driver/mysql
-    go get github.com/pkg/errors
     go get github.com/jonathankentstevens/gostruct
 
 Create a generate.go file with the following contents (including your db username/password):
