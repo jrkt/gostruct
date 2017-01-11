@@ -815,7 +815,7 @@ func (gs *Gostruct) buildExtractPkg() error {
 
 import (
 	"database/sql"
-	"errors"
+	"github.com/pkg/errors"
 	"reflect"
 	"strings"
 	"time"
