@@ -165,17 +165,14 @@ func main() {
 ```go
 //Package User contains base methods and CRUD functionality to
 //interact with the user table in the main database
-
 package User
 
 import (
 	"connection"
 	"database/sql"
-	"fmt"
 	"reflect"
 	"strings"
 	"time"
-	"utils/extract"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/pkg/errors"
@@ -242,31 +239,11 @@ func (obj *User) TypeInfo() (string, interface{}) {
 
 //Save runs an INSERT..UPDATE ON DUPLICATE KEY and validates each value being saved
 func (obj *User) Save() (sql.Result, error) {
-	var columnArr []string
-	var args []interface{}
-	var q []string
-
 	v := reflect.ValueOf(obj).Elem()
 	valType := v.Type()
 
-	updateStr := ""
-	query := "INSERT INTO user"
-	for i := 0; i < v.NumField(); i++ {
-		val, err := extract.GetValue(v.Field(i), valType.Field(i))
-		if err != nil {
-			return nil, errors.Wrap(err, "field validation error")
-		}
-		args = append(args, val)
-		column := string(valType.Field(i).Tag.Get("column"))
-		columnArr = append(columnArr, "`"+column+"`")
-		q = append(q, "?")
-		if i > 0 && updateStr != "" {
-			updateStr += ", "
-		}
-		updateStr += "`" + column + "` = ?"
-	}
-
-	query += " (" + strings.Join(columnArr, ", ") + ") VALUES (" + strings.Join(q, ", ") + ") ON DUPLICATE KEY UPDATE " + updateStr
+	args, columns, q, updateStr, err := connection.BuildQuery(v, valType)
+	query := "INSERT INTO user (" + strings.Join(columns, ", ") + ") VALUES (" + strings.Join(q, ", ") + ") ON DUPLICATE KEY UPDATE " + updateStr
 	newArgs := append(args, args...)
 	newRecord := false
 	if obj.Id == 0 {
@@ -303,50 +280,32 @@ func ReadAll(options ...connection.QueryOptions) ([]*User, error) {
 //ReadByQuery returns an array of User pointers
 func ReadByQuery(query string, args ...interface{}) ([]*User, error) {
 	var objects []*User
-	var err error
-	var argss []interface{}
-	for _, arg := range args {
-		switch t := arg.(type) {
-		case []connection.QueryOptions:
-			if len(t) > 0 {
-				options := t[0]
-				orderBy := options.OrderBy
-				if orderBy != "" {
-					query += fmt.Sprintf(" ORDER BY %s", orderBy)
-				}
-				limit := options.Limit
-				if limit != 0 {
-					query += fmt.Sprintf(" LIMIT %d", limit)
-				}
-			}
-		default:
-			argss = append(argss, t)
-		}
-	}
 
 	con, err := connection.Get("main")
 	if err != nil {
 		return objects, errors.Wrap(err, "connection failed")
 	}
+
+	newArgs := connection.ApplyQueryOptions(&query, args)
 	query = strings.Replace(query, "'", "\"", -1)
-	rows, err := con.Query(query, argss...)
+	rows, err := con.Query(query, newArgs...)
 	if err != nil {
 		return objects, errors.Wrap(err, "query error")
-	} else {
-		rowsErr := rows.Err()
-		if rowsErr != nil {
-			return objects, errors.Wrap(err, "rows error")
-		}
+	}
 
-		defer rows.Close()
-		for rows.Next() {
-			var obj user
-			err = rows.Scan(&obj.Id, &obj.Age, &obj.Name, &obj.Occupation, &obj.Active, &obj.Cool, &obj.Signup_date, &obj.Inactive_date, &obj.Main_interest)
-			if err != nil {
-				return objects, errors.Wrap(err, "scan error")
-			}
-			objects = append(objects, &User{obj.Id, &obj.Age.Int64, obj.Name, &obj.Occupation.String, obj.Active, &obj.Cool.Bool, obj.Signup_date, &obj.Inactive_date.Time, obj.Main_interest})
+	rowsErr := rows.Err()
+	if rowsErr != nil {
+		return objects, errors.Wrap(err, "rows error")
+	}
+
+	defer rows.Close()
+	for rows.Next() {
+		var obj user
+		err = rows.Scan(&obj.Id, &obj.Age, &obj.Name, &obj.Occupation, &obj.Active, &obj.Cool, &obj.Signup_date, &obj.Inactive_date, &obj.Main_interest)
+		if err != nil {
+			return objects, errors.Wrap(err, "scan error")
 		}
+		objects = append(objects, &User{obj.Id, &obj.Age.Int64, obj.Name, &obj.Occupation.String, obj.Active, &obj.Cool.Bool, obj.Signup_date, &obj.Inactive_date.Time, obj.Main_interest})
 	}
 
 	if len(objects) == 0 {
@@ -383,7 +342,6 @@ func Exec(query string, args ...interface{}) (sql.Result, error) {
 	}
 	return con.Exec(query, args...)
 }
-
 ```
 
 # User_test.go - sample skeleton file generated

@@ -256,18 +256,14 @@ func (gs *Gostruct) buildBase(objects []TableObj, table string) error {
 	}
 	initialString := `//Package ` + tableNaming + ` contains base methods and CRUD functionality to
 //interact with the ` + table + ` table in the ` + gs.Database + ` database
-
 package ` + tableNaming
 	importString := `
 
 import (
-	"database/sql"
-	"strings"
-	"github.com/pkg/errors"
-	"fmt"
 	"connection"
+	"database/sql"
 	"reflect"
-	"utils/extract"`
+	"strings"`
 
 	nilStruct := `
 	//` + lowerTable + ` is the nilable structure of the home table
@@ -432,10 +428,17 @@ Loop:
 		importString += `
 		"time"`
 	}
+	importString += `
+	`
 	if importMysql && nullableCnt > optionThreshold {
 		importString += `
 		"github.com/go-sql-driver/mysql"`
+	} else {
+		importString += `
+		_ "github.com/go-sql-driver/mysql"`
 	}
+	importString += `
+		"github.com/pkg/errors"`
 
 	var scanStr string
 	if nullableCnt <= optionThreshold {
@@ -443,8 +446,6 @@ Loop:
 	} else {
 		scanStr = string2
 	}
-
-	bs := "`"
 
 	if len(primaryKeys) == 1 {
 		string1 += `
@@ -488,31 +489,11 @@ func (obj *` + tableNaming + `) TypeInfo() (string, interface{}) {
 
 //Save runs an INSERT..UPDATE ON DUPLICATE KEY and validates each value being saved
 func (obj *` + tableNaming + `) ` + funcName + `Save() (sql.Result, error) {
-	var columnArr []string
-	var args []interface{}
-	var q []string
-
 	v := reflect.ValueOf(obj).Elem()
 	valType := v.Type()
 
-	updateStr := ""
-	query := "INSERT INTO ` + table + `"
-	for i := 0; i < v.NumField(); i++ {
-		val, err := extract.GetValue(v.Field(i), valType.Field(i))
-		if err != nil {
-			return nil, errors.Wrap(err, "field validation error")
-		}
-		args = append(args, val)
-		column := string(valType.Field(i).Tag.Get("column"))
-		columnArr = append(columnArr, "` + bs + `"+column+"` + bs + `")
-		q = append(q, "?")
-		if i > 0 && updateStr != "" {
-			updateStr += ", "
-		}
-		updateStr += "` + bs + `" + column + "` + bs + ` = ?"
-	}
-
-	query += " (" + strings.Join(columnArr, ", ") + ") VALUES (" + strings.Join(q, ", ") + ") ON DUPLICATE KEY UPDATE " + updateStr
+	args, columns, q, updateStr, err := connection.BuildQuery(v, valType)
+	query := "INSERT INTO ` + table + ` (" + strings.Join(columns, ", ") + ") VALUES (" + strings.Join(q, ", ") + ") ON DUPLICATE KEY UPDATE " + updateStr
 	newArgs := append(args, args...)`
 
 		if len(primaryKeys) > 1 {
@@ -617,42 +598,26 @@ func ReadAll` + funcName + `(options ...connection.QueryOptions) ([]*` + tableNa
 //ReadByQuery returns an array of ` + tableNaming + ` pointers
 func Read` + funcName + `ByQuery(query string, args ...interface{}) ([]*` + tableNaming + `, error) {
 	var objects []*` + tableNaming + `
-	var err error
-	var argss []interface{}
-	for _, arg := range args {
-		switch t := arg.(type) {
-		case []connection.QueryOptions:
-			if len(t) > 0 {
-				options := t[0]
-				orderBy := options.OrderBy
-				if orderBy != "" {
-					query += fmt.Sprintf(" ORDER BY %s", orderBy)
-				}
-				limit := options.Limit
-				if limit != 0 {
-					query += fmt.Sprintf(" LIMIT %d", limit)
-				}
-			}
-		default:
-			argss = append(argss, t)		}
-	}
 
 	con, err := connection.Get("` + gs.Database + `")
 	if err != nil {
 		return objects, errors.Wrap(err, "connection failed")
 	}
+
+	newArgs := connection.ApplyQueryOptions(&query, args)
 	query = strings.Replace(query, "'", "\"", -1)
-	rows, err := con.Query(query, argss...)
+	rows, err := con.Query(query, newArgs...)
 	if err != nil {
 		return objects, errors.Wrap(err, "query error")
-	} else {
-		rowsErr := rows.Err()
-		if rowsErr != nil {
-			return objects, errors.Wrap(err, "rows error")
-		}
+	}
 
-		defer rows.Close()
-		for rows.Next() {`
+	rowsErr := rows.Err()
+	if rowsErr != nil {
+		return objects, errors.Wrap(err, "rows error")
+	}
+
+	defer rows.Close()
+	for rows.Next() {`
 	if nullableCnt <= optionThreshold {
 		string1 += "var obj " + tableNaming
 		string1 += nullableDeclarations
@@ -674,7 +639,6 @@ func Read` + funcName + `ByQuery(query string, args ...interface{}) ([]*` + tabl
 	}
 
 	string1 += `
-		}
 	}
 
 	if len(objects) == 0 {
@@ -944,6 +908,7 @@ func (gs *Gostruct) buildConnectionPkg() error {
 		return nil
 	}
 
+	bs := "`"
 	conFilePath := GOPATH + "/src/connection/connection.go"
 	contents := `//Package connection handles all connections to the MySQL database(s)
 package connection
@@ -952,9 +917,12 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"reflect"
 	"sync"
+	"utils/extract"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/pkg/errors"
 )
 
 var (
@@ -984,7 +952,6 @@ type QueryOptions struct {
 //still active, it will just return that connection. Otherwise, it will open a new connection to
 //the specified database and add it to the connections list.
 func Get(db string) (*sql.DB, error) {
-
 	connection := connections.list[db]
 	if connection != nil {
 		//determine if connection is still active
@@ -994,7 +961,7 @@ func Get(db string) (*sql.DB, error) {
 		}
 	}
 
-	con, err := sql.Open("mysql", fmt.Sprintf("` + gs.Username + `:` + gs.Password + `@tcp(` + gs.Host + `:3306)/%s?parseTime=true", db))
+	con, err := sql.Open("mysql", fmt.Sprintf("root:asdfjklasdf@tcp(localhost:3306)/%s?parseTime=true", db))
 	if err != nil {
 		//do whatever tickles your fancy here
 		log.Fatalln("Connection Error to DB [", db, "]", err.Error())
@@ -1008,6 +975,66 @@ func Get(db string) (*sql.DB, error) {
 
 	return con, nil
 }
+
+//ApplyQueryOptions takes in a slice of interfaces from a query and applies the QueryOptions struct
+func ApplyQueryOptions(query *string, args []interface{}) []interface{} {
+	var newArgs []interface{}
+	for _, arg := range args {
+		switch t := arg.(type) {
+		case []QueryOptions:
+			if len(t) > 0 {
+				options := t[0]
+				orderBy := options.OrderBy
+				if orderBy != "" {
+					*query += fmt.Sprintf(" ORDER BY %s", orderBy)
+				}
+				limit := options.Limit
+				if limit != 0 {
+					*query += fmt.Sprintf(" LIMIT %d", limit)
+				}
+			}
+		case QueryOptions:
+			orderBy := t.OrderBy
+			if orderBy != "" {
+				*query += fmt.Sprintf(" ORDER BY %s", orderBy)
+			}
+			limit := t.Limit
+			if limit != 0 {
+				*query += fmt.Sprintf(" LIMIT %d", limit)
+			}
+		default:
+			newArgs = append(newArgs, t)
+		}
+	}
+
+	return newArgs
+}
+
+//BuildQuery returns all necessary arguments for the Save method of a type
+func BuildQuery(v reflect.Value, valType reflect.Type) ([]interface{}, []string, []string, string, error) {
+	var columns []string
+	var q []string
+	var updateStr string
+	var args []interface{}
+
+	for i := 0; i < v.NumField(); i++ {
+		val, err := extract.GetValue(v.Field(i), valType.Field(i))
+		if err != nil {
+			return nil, columns, q, "", errors.Wrap(err, "field validation error")
+		}
+		args = append(args, val)
+		column := string(valType.Field(i).Tag.Get("column"))
+		columns = append(columns, "` + bs + `"+column+"` + bs + `")
+		q = append(q, "?")
+		if i > 0 && updateStr != "" {
+			updateStr += ", "
+		}
+		updateStr += "` + bs + `" + column + "` + bs + ` = ?"
+	}
+
+	return args, columns, q, updateStr, nil
+}
+
 `
 	err = writeFile(conFilePath, contents, false)
 	if err != nil {
