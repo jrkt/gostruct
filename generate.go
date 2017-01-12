@@ -490,9 +490,10 @@ func (obj *` + tableNaming + `) TypeInfo() (string, interface{}) {
 //Save runs an INSERT..UPDATE ON DUPLICATE KEY and validates each value being saved
 func (obj *` + tableNaming + `) ` + funcName + `Save() (sql.Result, error) {
 	v := reflect.ValueOf(obj).Elem()
-	valType := v.Type()
-
-	args, columns, q, updateStr, err := connection.BuildQuery(v, valType)
+	args, columns, q, updateStr, err := connection.BuildQuery(v, v.Type())
+	if err != nil {
+		return nil, errors.Wrap(err, "field validation error")
+	}
 	query := "INSERT INTO ` + table + ` (" + strings.Join(columns, ", ") + ") VALUES (" + strings.Join(q, ", ") + ") ON DUPLICATE KEY UPDATE " + updateStr
 	newArgs := append(args, args...)`
 
@@ -689,8 +690,7 @@ func ReadOne` + funcName + `ByQuery(query string, args ...interface{}) (*` + tab
 func ` + funcName + `Exec(query string, args ...interface{}) (sql.Result, error) {
 	con, err := connection.Get("` + gs.Database + `")
 	if err != nil {
-		var result sql.Result
-		return result, errors.Wrap(err, "connection failed")
+		return nil, errors.Wrap(err, "connection failed")
 	}
 	return con.Exec(query, args...)
 }`
@@ -922,7 +922,6 @@ import (
 	"utils/extract"
 
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/pkg/errors"
 )
 
 var (
@@ -1020,7 +1019,7 @@ func BuildQuery(v reflect.Value, valType reflect.Type) ([]interface{}, []string,
 	for i := 0; i < v.NumField(); i++ {
 		val, err := extract.GetValue(v.Field(i), valType.Field(i))
 		if err != nil {
-			return nil, columns, q, "", errors.Wrap(err, "field validation error")
+			return nil, columns, q, "", err
 		}
 		args = append(args, val)
 		column := string(valType.Field(i).Tag.Get("column"))

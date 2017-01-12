@@ -240,9 +240,10 @@ func (obj *User) TypeInfo() (string, interface{}) {
 //Save runs an INSERT..UPDATE ON DUPLICATE KEY and validates each value being saved
 func (obj *User) Save() (sql.Result, error) {
 	v := reflect.ValueOf(obj).Elem()
-	valType := v.Type()
-
-	args, columns, q, updateStr, err := connection.BuildQuery(v, valType)
+	args, columns, q, updateStr, err := connection.BuildQuery(v, v.Type())
+	if err != nil {
+		return nil, errors.Wrap(err, "field validation error")
+	}
 	query := "INSERT INTO user (" + strings.Join(columns, ", ") + ") VALUES (" + strings.Join(q, ", ") + ") ON DUPLICATE KEY UPDATE " + updateStr
 	newArgs := append(args, args...)
 	newRecord := false
@@ -337,8 +338,7 @@ func ReadOneByQuery(query string, args ...interface{}) (*User, error) {
 func Exec(query string, args ...interface{}) (sql.Result, error) {
 	con, err := connection.Get("main")
 	if err != nil {
-		var result sql.Result
-		return result, errors.Wrap(err, "connection failed")
+		return nil, errors.Wrap(err, "connection failed")
 	}
 	return con.Exec(query, args...)
 }
