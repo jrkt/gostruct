@@ -324,6 +324,7 @@ func ReadOneByQuery(query string, args ...interface{}) (*User, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "connection failed")
 	}
+
 	query = strings.Replace(query, "'", "\"", -1)
 	err = con.QueryRow(query, args...).Scan(&obj.Id, &obj.Age, &obj.Name, &obj.Occupation, &obj.Active, &obj.Cool, &obj.Signup_date, &obj.Inactive_date, &obj.Main_interest)
 	if err != nil && err != sql.ErrNoRows {
@@ -331,7 +332,6 @@ func ReadOneByQuery(query string, args ...interface{}) (*User, error) {
 	}
 
 	return &User{obj.Id, &obj.Age.Int64, obj.Name, &obj.Occupation.String, obj.Active, &obj.Cool.Bool, obj.Signup_date, &obj.Inactive_date.Time, obj.Main_interest}, nil
-
 }
 
 //Exec allows for update queries

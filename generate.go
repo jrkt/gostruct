@@ -82,7 +82,6 @@ var (
 	err        error
 	con        *sql.DB
 	tablesDone []string
-	primaryKey string
 	GOPATH     string
 )
 
@@ -247,10 +246,15 @@ func (gs *Gostruct) handleTable(table string) error {
 func (gs *Gostruct) buildBase(objects []TableObj, table string) error {
 	tableNaming := uppercaseFirst(table)
 	lowerTable := strings.ToLower(table)
+
 	dir := GOPATH + "/src/models/" + tableNaming + "/"
+	importTime, importMysql := false, false
 
 	var usedColumns []usedColumn
-	var funcName string
+	var scanStr, scanStr2, nilExtension, contents string
+	var primaryKeys, primaryKeyTypes, questionMarks []string
+	var nullableDeclarations, nullableHandlers, funcName string
+
 	if gs.NameFuncs {
 		funcName = tableNaming
 	}
@@ -273,16 +277,6 @@ type ` + lowerTable + " struct {"
 
 //` + tableNaming + ` is the structure of the home table
 type ` + tableNaming + " struct {"
-	string2, nilString2, scanStr2, nilExtension := "", "", "", ""
-	contents := ""
-
-	var primaryKeys []string
-	var primaryKeyTypes []string
-	var questionMarks []string
-	var nullableDeclarations, nullableHandlers string
-
-	importTime, importMysql := false, false
-	nullableCnt := 0
 
 Loop:
 	for i := 0; i < len(objects); i++ {
@@ -302,7 +296,6 @@ Loop:
 			isBool = false
 			if object.IsNullable == "YES" {
 				dataType = "*int64"
-				nullableCnt++
 				nilDataType = "sql.NullInt64"
 				nilExtension = ".Int64"
 			} else {
@@ -324,7 +317,6 @@ Loop:
 			if isBool {
 				if object.IsNullable == "YES" {
 					dataType = "*bool"
-					nullableCnt++
 					nilDataType = "sql.NullBool"
 					nilExtension = ".Bool"
 				} else {
@@ -334,7 +326,6 @@ Loop:
 			} else {
 				if object.IsNullable == "YES" {
 					dataType = "*int64"
-					nullableCnt++
 					nilDataType = "sql.NullInt64"
 					nilExtension = ".Int64"
 				} else {
@@ -346,7 +337,6 @@ Loop:
 			isBool = false
 			if object.IsNullable == "YES" {
 				dataType = "*float64"
-				nullableCnt++
 				nilDataType = "sql.NullFloat64"
 				nilExtension = ".Float64"
 			} else {
@@ -359,7 +349,6 @@ Loop:
 			if object.IsNullable == "YES" {
 				dataType = "*time.Time"
 				importMysql = true
-				nullableCnt++
 				nilDataType = "mysql.NullTime"
 				nilExtension = ".Time"
 			} else {
@@ -370,7 +359,6 @@ Loop:
 			isBool = false
 			if object.IsNullable == "YES" {
 				dataType = "*string"
-				nullableCnt++
 				nilDataType = "sql.NullString"
 				nilExtension = ".String"
 			} else {
@@ -399,30 +387,21 @@ Loop:
 				if ` + name + ` != nil {
 					` + "obj." + uppercaseFirst(object.Name) + ` = ` + name + `
 				}`
-				nilString2 += ", &" + name
 				scanStr2 += ", &obj." + uppercaseFirst(object.Name) + nilExtension
 			} else {
-				nilString2 += ", &obj." + uppercaseFirst(object.Name)
 				scanStr2 += ", obj." + uppercaseFirst(object.Name)
 			}
-			string2 += ", &obj." + uppercaseFirst(object.Name)
+			scanStr += ", &obj." + uppercaseFirst(object.Name)
 		}
 
-		defaultVal := ""
+		var defaultVal string
 		if strings.ToLower(object.Default.String) != "null" {
 			defaultVal = object.Default.String
 		}
 		string1 += "\n\t" + uppercaseFirst(object.Name) + "\t\t" + dataType + "\t\t`column:\"" + object.Name + "\" default:\"" + defaultVal + "\" type:\"" + object.ColumnType + "\" key:\"" + object.Key + "\" null:\"" + object.IsNullable + "\" extra:\"" + object.Extra.String + "\"`"
 		nilStruct += "\n\t" + uppercaseFirst(object.Name) + "\t\t" + nilDataType
 	}
-	string1 += "\n}"
-	nilStruct += "\n}\n"
-
-	optionThreshold := 1
-
-	if nullableCnt > optionThreshold {
-		string1 += nilStruct
-	}
+	string1 += "\n}" + nilStruct + "\n}\n"
 
 	if importTime {
 		importString += `
@@ -430,7 +409,7 @@ Loop:
 	}
 	importString += `
 	`
-	if importMysql && nullableCnt > optionThreshold {
+	if importMysql {
 		importString += `
 		"github.com/go-sql-driver/mysql"`
 	} else {
@@ -439,13 +418,6 @@ Loop:
 	}
 	importString += `
 		"github.com/pkg/errors"`
-
-	var scanStr string
-	if nullableCnt <= optionThreshold {
-		scanStr = nilString2
-	} else {
-		scanStr = string2
-	}
 
 	if len(primaryKeys) == 1 {
 		string1 += `
@@ -592,9 +564,7 @@ func Read` + funcName + `ByKey(` + paramStr + `) (*` + tableNaming + `, error) {
 //ReadAll returns all records in the table
 func ReadAll` + funcName + `(options ...connection.QueryOptions) ([]*` + tableNaming + `, error) {
 	return Read` + funcName + `ByQuery("SELECT * FROM ` + table + `", options)
-}`
-
-	string1 += `
+}
 
 //ReadByQuery returns an array of ` + tableNaming + ` pointers
 func Read` + funcName + `ByQuery(query string, args ...interface{}) ([]*` + tableNaming + `, error) {
@@ -618,28 +588,13 @@ func Read` + funcName + `ByQuery(query string, args ...interface{}) ([]*` + tabl
 	}
 
 	defer rows.Close()
-	for rows.Next() {`
-	if nullableCnt <= optionThreshold {
-		string1 += "var obj " + tableNaming
-		string1 += nullableDeclarations
-	} else {
-		string1 += "var obj " + lowerTable
-	}
-	string1 += `
-			err = rows.Scan(&obj.` + uppercaseFirst(objects[0].Name) + scanStr + `)
-			if err != nil {
-				return objects, errors.Wrap(err, "scan error")
-			}`
-	if nullableCnt <= optionThreshold {
-		string1 += nullableHandlers
-		string1 += `
-		objects = append(objects, &obj)`
-	} else {
-		string1 += `
-		objects = append(objects, &` + tableNaming + `{obj.` + uppercaseFirst(objects[0].Name) + scanStr2 + `})`
-	}
-
-	string1 += `
+	for rows.Next() {
+		var obj ` + lowerTable + `
+		err = rows.Scan(&obj.` + uppercaseFirst(objects[0].Name) + scanStr + `)
+		if err != nil {
+			return objects, errors.Wrap(err, "scan error")
+		}
+		objects = append(objects, &` + tableNaming + `{obj.` + uppercaseFirst(objects[0].Name) + scanStr2 + `})
 	}
 
 	if len(objects) == 0 {
@@ -650,40 +605,21 @@ func Read` + funcName + `ByQuery(query string, args ...interface{}) ([]*` + tabl
 }
 
 //ReadOneByQuery returns a single pointer to a(n) ` + tableNaming + `
-func ReadOne` + funcName + `ByQuery(query string, args ...interface{}) (*` + tableNaming + `, error) {`
-	if nullableCnt <= optionThreshold {
-		string1 += "var obj " + tableNaming
-	} else {
-		string1 += "var obj " + lowerTable
-	}
-
-	string1 += `
+func ReadOne` + funcName + `ByQuery(query string, args ...interface{}) (*` + tableNaming + `, error) {
+	var obj ` + lowerTable + `
 
 	con, err := connection.Get("` + gs.Database + `")
 	if err != nil {
 		return nil, errors.Wrap(err, "connection failed")
 	}
-	query = strings.Replace(query, "'", "\"", -1)`
-	if nullableCnt <= optionThreshold {
-		string1 += nullableDeclarations
-	}
-	string1 += `
+
+	query = strings.Replace(query, "'", "\"", -1)
 	err = con.QueryRow(query, args...).Scan(&obj.` + uppercaseFirst(objects[0].Name) + scanStr + `)
 	if err != nil && err != sql.ErrNoRows {
 		return nil, errors.Wrap(err, "query/scan error")
-	}`
-	if nullableCnt <= optionThreshold {
-		string1 += nullableHandlers
-		string1 += `
-
-		return &obj, err`
-	} else {
-		string1 += `
-
-		return &` + tableNaming + `{obj.` + uppercaseFirst(objects[0].Name) + scanStr2 + `}, nil
-		`
 	}
-	string1 += `
+
+	return &` + tableNaming + `{obj.` + uppercaseFirst(objects[0].Name) + scanStr2 + `}, nil
 }
 
 //Exec allows for update queries
