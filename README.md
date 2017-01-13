@@ -150,7 +150,7 @@ func (user *UserObj) Terminate() error {
 Usage:
 ```go
 func main() {
-	users, err := User.ReadAllActive("Name ASC")
+	users, err := User.ReadAllActive(connection.QueryOptions{OrderBy: "Name ASC"})
 	if err != nil {
 	    //read failed or no results found
 	} else {
