@@ -301,7 +301,7 @@ func buildBase(gs Gostruct, objects []tableObj, table string) error {
 	var usedColumns []usedColumn
 	var scanStr, scanStr2, nilExtension string
 	var primaryKeys, primaryKeyTypes, questionMarks []string
-	var nullableDeclarations, nullableHandlers, funcName string
+	var funcName string
 
 	if gs.NameFuncs {
 		funcName = tableNaming
@@ -433,12 +433,6 @@ Loop:
 				if name == "type" {
 					name = "objType"
 				}
-				nullableDeclarations += `
-					var ` + name + " " + dataType
-				nullableHandlers += `
-				if ` + name + ` != nil {
-					` + "obj." + uppercaseFirst(object.Name) + ` = ` + name + `
-				}`
 				scanStr2 += ", &obj." + uppercaseFirst(object.Name) + nilExtension
 			} else {
 				scanStr2 += ", obj." + uppercaseFirst(object.Name)
