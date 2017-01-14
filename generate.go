@@ -429,10 +429,6 @@ Loop:
 
 		if i > 0 {
 			if object.IsNullable == "YES" {
-				name := strings.ToLower(object.Name)
-				if name == "type" {
-					name = "objType"
-				}
 				scanStr2 += ", &obj." + uppercaseFirst(object.Name) + nilExtension
 			} else {
 				scanStr2 += ", obj." + uppercaseFirst(object.Name)
