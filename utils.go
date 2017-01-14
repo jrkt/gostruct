@@ -31,6 +31,22 @@ func uppercaseFirst(s string) string {
 	return string(bytes.Join([][]byte{lc, rest}, nil))
 }
 
+//createDirectory creates directory and sets permissions to 0777
+func createDirectory(path string) error {
+	err = os.Mkdir(path, 0777)
+	if err != nil {
+		return err
+	}
+
+	//give new directory full permissions
+	err = os.Chmod(path, 0777)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 //Write contents to file and overwrite
 func writeFile(path string, contents string, overwrite bool) error {
 	var err error

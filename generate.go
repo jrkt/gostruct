@@ -44,17 +44,36 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 
 	//imported to allow mysql driver to be used
+	"flag"
+
+	"log"
+
+	"time"
+
+	"sync"
+
 	_ "github.com/go-sql-driver/mysql"
 )
 
-//TableObj is the result set returned from the MySQL information_schema that
+//Gostruct is the main holding object for connection information
+type Gostruct struct {
+	Database  string
+	Host      string
+	Port      string
+	Username  string
+	Password  string
+	NameFuncs bool
+	Add       chan int
+	Processed int
+}
+
+//tableObj is the result set returned from the MySQL information_schema that
 //contains all data for a specific table
-type TableObj struct {
+type tableObj struct {
 	Name       string
 	IsNullable string
 	Key        string
@@ -64,8 +83,7 @@ type TableObj struct {
 	Extra      sql.NullString
 }
 
-//Table houses the name of the table
-type Table struct {
+type table struct {
 	Name string
 }
 
@@ -77,12 +95,16 @@ type uniqueValues struct {
 	Value sql.NullString
 }
 
+type job struct {
+	gs    Gostruct
+	table string
+}
+
 //Globals variables
 var (
-	err        error
-	con        *sql.DB
-	tablesDone []string
-	GOPATH     string
+	err    error
+	GOPATH string
+	wg     sync.WaitGroup
 )
 
 //initialize global GOPATH
@@ -91,96 +113,126 @@ func init() {
 	if last := len(GOPATH) - 1; last >= 0 && GOPATH[last] == '/' {
 		GOPATH = GOPATH[:last]
 	}
+
+	err = buildConnectionPkg()
+	if err != nil {
+		panic(err)
+	}
+
+	//handle extract file
+	err = buildExtractPkg()
+	if err != nil {
+		panic(err)
+	}
 }
 
-//Run generates a package for a single table
-func (gs *Gostruct) Run(table string) error {
+//Generate table model for mysql
+func (gs *Gostruct) Generate() error {
+	var err error
+
+	tbls := flag.String("tables", "", "Comma separated list of tables")
+	db := flag.String("db", "", "Database")
+	host := flag.String("host", "", "DB Host")
+	port := flag.String("port", "3306", "DB Port (MySQL 3306 is default)")
+	all := flag.Bool("all", false, "Run for All Tables")
+	nameFuncs := flag.Bool("nameFuncs", false, "Whether to include the struct name in the function signature")
+	flag.Parse()
+
+	gs.Database = *db
+	gs.Host = *host
+	gs.NameFuncs = *nameFuncs
+	gs.Port = *port
+
+	t := strings.Replace(*tbls, " ", "", -1)
+	tables := strings.Split(t, ",")
+
+	work := make(chan *job)
+	var numWorkers int
+	if *all == true {
+		numWorkers = 50
+	} else {
+		numWorkers = len(tables)
+	}
+	gs.Add = make(chan int, 1)
+	for i := 0; i < numWorkers; i++ {
+		go startWorker(work, gs.Add)
+	}
+
+	stop := startTimer(gs)
+	defer stop()
+
+	go gs.counter()
+	if *all {
+		err = RunAll(*gs, work)
+		if err != nil {
+			return err
+		}
+	} else {
+		if (*tbls == "" && !*all) || *db == "" || *host == "" {
+			return errors.New("You must include the 'table', 'database', and 'host' flags")
+		}
+		wg.Add(len(tables))
+		for _, tbl := range tables {
+			work <- &job{*gs, tbl}
+		}
+	}
+	log.Println("Waiting for goroutines to finish work...")
+	wg.Wait()
+
+	return nil
+}
+
+//counter provides a safe way to keep count of the processed table count
+func (gs *Gostruct) counter() {
+	for {
+		select {
+		case cnt := <-gs.Add:
+			gs.Processed += cnt
+		}
+	}
+}
+
+//RunAll generates packages for all tables in a specific database and host
+func RunAll(gs Gostruct, work chan<- *job) error {
+	connection, err := sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", gs.Username, gs.Password, gs.Host, gs.Port, gs.Database))
+	if err != nil {
+		return err
+	}
+	rows, err := connection.Query("SELECT DISTINCT(TABLE_NAME) FROM `information_schema`.`COLUMNS` WHERE `TABLE_SCHEMA` LIKE ?", gs.Database)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		wg.Add(1)
+		var tbl table
+		rows.Scan(&tbl.Name)
+		work <- &job{gs, tbl.Name}
+	}
+
+	return nil
+}
+
+//Run handles the run for a single table
+func Run(gs Gostruct, table string) error {
 	//make sure models dir exists
 	if !exists(GOPATH + "/src/models") {
-		err = gs.CreateDirectory(GOPATH + "/src/models")
+		err = createDirectory(GOPATH + "/src/models")
 		if err != nil {
 			return err
 		}
 	}
 
-	err = gs.buildConnectionPkg()
-	if err != nil {
-		return err
-	}
+	log.Println("Building package:", table)
 
-	//handle utils file
-	err = gs.buildExtractPkg()
-	if err != nil {
-		return err
-	}
-
-	err = gs.handleTable(table)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-//RunAll generates packages for all tables in a specific database and host
-func (gs *Gostruct) RunAll() error {
-	connection, err := sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", gs.Username, gs.Password, gs.Host, gs.Port, gs.Database))
-	if err != nil {
-		panic(err)
-	} else {
-		rows, err := connection.Query("SELECT DISTINCT(TABLE_NAME) FROM `information_schema`.`COLUMNS` WHERE `TABLE_SCHEMA` LIKE ?", gs.Database)
-		if err != nil {
-			panic(err)
-		} else {
-			for rows.Next() {
-				var table Table
-				rows.Scan(&table.Name)
-
-				err = gs.Run(table.Name)
-				if err != nil {
-					return err
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-//CreateDirectory creates directory and sets permissions to 0777
-func (gs *Gostruct) CreateDirectory(path string) error {
-	err = os.Mkdir(path, 0777)
-	if err != nil {
-		return err
-	}
-
-	//give new directory full permissions
-	err = os.Chmod(path, 0777)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-//Main handler method for tables
-func (gs *Gostruct) handleTable(table string) error {
-	if inArray(table, tablesDone) {
-		return nil
-	}
-	tablesDone = append(tablesDone, table)
-
-	log.Println("Generating Models for: " + table)
-
-	con, err = sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", gs.Username, gs.Password, gs.Host, gs.Port, gs.Database))
+	con, err := getConnection(gs)
 	if err != nil {
 		return err
 	}
 
 	rows1, err := con.Query("SELECT column_name, is_nullable, column_key, data_type, column_type, column_default, extra FROM information_schema.columns WHERE table_name = ? AND table_schema = ?", table, gs.Database)
 
-	var object TableObj
-	var objects []TableObj = make([]TableObj, 0)
+	var object tableObj
+	var objects []tableObj
 	var columns []string
 
 	tableNaming := uppercaseFirst(table)
@@ -222,19 +274,19 @@ func (gs *Gostruct) handleTable(table string) error {
 	}
 
 	//handle CRUX file
-	err = gs.buildBase(objects, table)
+	err = buildBase(gs, objects, table)
 	if err != nil {
 		return err
 	}
 
 	//handle DAO file
-	err = gs.buildExtended(table)
+	err = buildExtended(table)
 	if err != nil {
 		return err
 	}
 
 	//handle Test file
-	err = gs.buildTest(table)
+	err = buildTest(table)
 	if err != nil {
 		return err
 	}
@@ -243,7 +295,7 @@ func (gs *Gostruct) handleTable(table string) error {
 }
 
 //Builds {table}_base.go file with main struct and CRUD functionality
-func (gs *Gostruct) buildBase(objects []TableObj, table string) error {
+func buildBase(gs Gostruct, objects []tableObj, table string) error {
 	tableNaming := uppercaseFirst(table)
 	lowerTable := strings.ToLower(table)
 
@@ -251,7 +303,7 @@ func (gs *Gostruct) buildBase(objects []TableObj, table string) error {
 	importTime, importMysql := false, false
 
 	var usedColumns []usedColumn
-	var scanStr, scanStr2, nilExtension, contents string
+	var scanStr, scanStr2, nilExtension string
 	var primaryKeys, primaryKeyTypes, questionMarks []string
 	var nullableDeclarations, nullableHandlers, funcName string
 
@@ -303,6 +355,10 @@ Loop:
 				nilDataType = "int64"
 			}
 		case "tinyint", "smallint":
+			con, err := getConnection(gs)
+			if err != nil {
+				return err
+			}
 			rows, err := con.Query("SELECT DISTINCT(`" + object.Name + "`) FROM " + gs.Database + "." + table)
 			if err != nil {
 				return err
@@ -632,10 +688,9 @@ func ` + funcName + `Exec(query string, args ...interface{}) (sql.Result, error)
 }`
 
 	importString += "\n)"
-	contents = initialString + importString + string1
 
 	autoGenFile := dir + tableNaming + "_base.go"
-	err = writeFile(autoGenFile, contents, true)
+	err = writeFile(autoGenFile, initialString+importString+string1, true)
 	if err != nil {
 		return err
 	}
@@ -649,7 +704,7 @@ func ` + funcName + `Exec(query string, args ...interface{}) (sql.Result, error)
 }
 
 //Builds {table}_extends.go file for custom Data Access Object methods
-func (gs *Gostruct) buildExtended(table string) error {
+func buildExtended(table string) error {
 	tableNaming := uppercaseFirst(table)
 	dir := GOPATH + "/src/models/" + tableNaming + "/"
 	daoFilePath := dir + tableNaming + "_extended.go"
@@ -671,7 +726,7 @@ func (gs *Gostruct) buildExtended(table string) error {
 }
 
 //Builds {table}_test.go file
-func (gs *Gostruct) buildTest(table string) error {
+func buildTest(table string) error {
 	tableNaming := uppercaseFirst(table)
 	dir := GOPATH + "/src/models/" + tableNaming + "/"
 	testFilePath := dir + tableNaming + "_test.go"
@@ -701,10 +756,10 @@ func (gs *Gostruct) buildTest(table string) error {
 }
 
 //Builds extract package
-func (gs *Gostruct) buildExtractPkg() error {
+func buildExtractPkg() error {
 	filePath := GOPATH + "/src/utils/extract/extract.go"
 	if !exists(GOPATH + "/src/utils/extract") {
-		err = gs.CreateDirectory(GOPATH + "/src/utils/extract")
+		err = createDirectory(GOPATH + "/src/utils/extract")
 		if err != nil {
 			return err
 		}
@@ -834,9 +889,9 @@ func InArray(char string, strings []string) bool {
 
 //Builds main connection package for serving up all database connections
 //with a shared connection pool
-func (gs *Gostruct) buildConnectionPkg() error {
+func buildConnectionPkg() error {
 	if !exists(GOPATH + "/src/connection") {
-		err = gs.CreateDirectory(GOPATH + "/src/connection")
+		err = createDirectory(GOPATH + "/src/connection")
 		if err != nil {
 			return err
 		}
@@ -982,4 +1037,32 @@ func BuildQuery(v reflect.Value, valType reflect.Type) ([]interface{}, []string,
 	}
 
 	return nil
+}
+
+//func startWorker(work <-chan runfunc, results chan<- error) {
+func startWorker(work <-chan *job, add chan<- int) {
+	for job := range work {
+		err := Run(job.gs, job.table)
+		if err != nil {
+			panic(err)
+		}
+		add <- 1
+		wg.Done()
+	}
+}
+
+//startTime keeps a timer of the duration of the process
+func startTimer(gs *Gostruct) func() {
+	t := time.Now()
+	return func() {
+		d := time.Now().Sub(t)
+		println("\n\n======= Results =======")
+		fmt.Println("Processed:", gs.Processed)
+		fmt.Println("Duration:", d)
+	}
+}
+
+//getConnection is a helper to return a connection & an error
+func getConnection(gs Gostruct) (*sql.DB, error) {
+	return sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", gs.Username, gs.Password, gs.Host, gs.Port, gs.Database))
 }
