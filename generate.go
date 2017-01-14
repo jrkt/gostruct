@@ -43,19 +43,15 @@ package gostruct
 import (
 	"database/sql"
 	"errors"
+	"flag"
 	"fmt"
+	"log"
 	"os"
 	"strings"
-
-	//imported to allow mysql driver to be used
-	"flag"
-
-	"log"
-
+	"sync"
 	"time"
 
-	"sync"
-
+	//imported to allow mysql driver to be used
 	_ "github.com/go-sql-driver/mysql"
 )
 
