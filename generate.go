@@ -65,7 +65,6 @@ type Gostruct struct {
 	NameFuncs bool
 	add       chan int
 	errorChan chan error
-	work      chan string
 	processed int
 	errored   int
 	errors    []error
@@ -140,15 +139,19 @@ func (g *Gostruct) Generate() error {
 
 	g.add = make(chan int, 1)
 	g.errorChan = make(chan error, 1)
-	g.work = make(chan string, 1)
+	work := make(chan string, 1)
 
-	go g.handler()
+	go g.handler(work)
+
+	for i := 0; i < 50; i++ {
+		go g.worker(work)
+	}
 
 	stop := startTimer(g)
 	defer stop()
 
 	if *all {
-		err = g.RunAll()
+		err = g.RunAll(work)
 		if err != nil {
 			return err
 		}
@@ -161,7 +164,7 @@ func (g *Gostruct) Generate() error {
 		g.total = len(tables)
 		for _, tbl := range tables {
 			wg.Add(1)
-			g.work <- tbl
+			work <- tbl
 		}
 	}
 	time.Sleep(1 * time.Second)
@@ -172,15 +175,13 @@ func (g *Gostruct) Generate() error {
 }
 
 //counter provides a safe way to keep count of the processed table count
-func (g *Gostruct) handler() {
+func (g *Gostruct) handler(work chan<- string) {
 	for {
 		select {
-		case tbl := <-g.work:
-			go g.Run(tbl)
 		case cnt := <-g.add:
 			g.processed += cnt
 			wg.Done()
-			printNoSpace("Progress.. ", g.processed, "/", g.total, "\r")
+			showProgress(*g)
 		case err := <-g.errorChan:
 			g.errored++
 			g.errors = append(g.errors, err)
@@ -188,8 +189,14 @@ func (g *Gostruct) handler() {
 	}
 }
 
+func (g Gostruct) worker(work <-chan string) {
+	for table := range work {
+		g.Run(table)
+	}
+}
+
 //RunAll generates packages for all tables in a specific database and host
-func (g *Gostruct) RunAll() error {
+func (g *Gostruct) RunAll(work chan<- string) error {
 	connection, err := sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", g.Username, g.Password, g.Host, g.Port, g.Database))
 	if err != nil {
 		return err
@@ -203,7 +210,7 @@ func (g *Gostruct) RunAll() error {
 		wg.Add(1)
 		var tbl table
 		rows.Scan(&tbl.Name)
-		g.work <- tbl.Name
+		work <- tbl.Name
 		g.total++
 	}
 
@@ -1041,12 +1048,12 @@ func startTimer(g *Gostruct) func() {
 	t := time.Now()
 	return func() {
 		d := time.Now().Sub(t)
-		printNoSpace("\n======= Results =======\n")
+		printNoSpace("\n\n======= Results =======\n")
 		fmt.Println("Processed:", g.processed)
 		fmt.Println("Duration:", d)
 
 		if g.errored > 0 {
-			printNoSpace("\n======= Errors: ", g.errored, "/", g.processed, " =======\n")
+			printNoSpace("\n\n======= Errors: ", g.errored, "/", g.processed, " =======\n")
 			for i, err := range g.errors {
 				fmt.Println(i+1, ":", err.Error())
 			}
@@ -1057,6 +1064,11 @@ func startTimer(g *Gostruct) func() {
 //getConnection is a helper to return a connection & an error
 func getConnection(gs Gostruct) (*sql.DB, error) {
 	return sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", gs.Username, gs.Password, gs.Host, gs.Port, gs.Database))
+}
+
+//showProgress prints how many tables have been processed compared to the total number
+func showProgress(g Gostruct) {
+	printNoSpace("Progress.. ", g.processed, "/", g.total, "\r")
 }
 
 //printNoSpace is a println implementation without automatically putting a space between args
