@@ -63,8 +63,13 @@ type Gostruct struct {
 	Username  string
 	Password  string
 	NameFuncs bool
-	Add       chan int
-	Processed int
+	add       chan int
+	errorChan chan error
+	work      chan string
+	processed int
+	errored   int
+	errors    []error
+	total     int
 }
 
 //tableObj is the result set returned from the MySQL information_schema that
@@ -89,11 +94,6 @@ type usedColumn struct {
 
 type uniqueValues struct {
 	Value sql.NullString
-}
-
-type job struct {
-	gs    Gostruct
-	table string
 }
 
 //Globals variables
@@ -123,8 +123,7 @@ func init() {
 }
 
 //Generate table model for mysql
-func (gs *Gostruct) Generate() error {
-	var err error
+func (g *Gostruct) Generate() error {
 
 	tbls := flag.String("tables", "", "Comma separated list of tables")
 	db := flag.String("db", "", "Database")
@@ -134,44 +133,38 @@ func (gs *Gostruct) Generate() error {
 	nameFuncs := flag.Bool("nameFuncs", false, "Whether to include the struct name in the function signature")
 	flag.Parse()
 
-	gs.Database = *db
-	gs.Host = *host
-	gs.NameFuncs = *nameFuncs
-	gs.Port = *port
+	g.Database = *db
+	g.Host = *host
+	g.NameFuncs = *nameFuncs
+	g.Port = *port
 
-	t := strings.Replace(*tbls, " ", "", -1)
-	tables := strings.Split(t, ",")
+	g.add = make(chan int, 1)
+	g.errorChan = make(chan error, 1)
+	g.work = make(chan string, 1)
 
-	work := make(chan *job)
-	var numWorkers int
-	if *all == true {
-		numWorkers = 50
-	} else {
-		numWorkers = len(tables)
-	}
-	gs.Add = make(chan int, 1)
-	for i := 0; i < numWorkers; i++ {
-		go startWorker(work, gs.Add)
-	}
+	go g.handler()
 
-	stop := startTimer(gs)
+	stop := startTimer(g)
 	defer stop()
 
-	go gs.counter()
 	if *all {
-		err = RunAll(*gs, work)
+		err = g.RunAll()
 		if err != nil {
 			return err
 		}
 	} else {
 		if (*tbls == "" && !*all) || *db == "" || *host == "" {
-			return errors.New("You must include the 'table', 'database', and 'host' flags")
+			return errors.New("You must include the 'table', 'database', and 'host' flag")
 		}
-		wg.Add(len(tables))
+		t := strings.Replace(*tbls, " ", "", -1)
+		tables := strings.Split(t, ",")
+		g.total = len(tables)
 		for _, tbl := range tables {
-			work <- &job{*gs, tbl}
+			wg.Add(1)
+			g.work <- tbl
 		}
 	}
+	time.Sleep(1 * time.Second)
 	log.Println("Waiting for goroutines to finish work...")
 	wg.Wait()
 
@@ -179,53 +172,68 @@ func (gs *Gostruct) Generate() error {
 }
 
 //counter provides a safe way to keep count of the processed table count
-func (gs *Gostruct) counter() {
+func (g *Gostruct) handler() {
 	for {
 		select {
-		case cnt := <-gs.Add:
-			gs.Processed += cnt
+		case tbl := <-g.work:
+			go g.Run(tbl)
+		case cnt := <-g.add:
+			g.processed += cnt
+			wg.Done()
+			printNoSpace("Progress.. ", g.processed, "/", g.total, "\r")
+		case err := <-g.errorChan:
+			g.errored++
+			g.errors = append(g.errors, err)
 		}
 	}
 }
 
 //RunAll generates packages for all tables in a specific database and host
-func RunAll(gs Gostruct, work chan<- *job) error {
-	connection, err := sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", gs.Username, gs.Password, gs.Host, gs.Port, gs.Database))
+func (g *Gostruct) RunAll() error {
+	connection, err := sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", g.Username, g.Password, g.Host, g.Port, g.Database))
 	if err != nil {
 		return err
 	}
-	rows, err := connection.Query("SELECT DISTINCT(TABLE_NAME) FROM `information_schema`.`COLUMNS` WHERE `TABLE_SCHEMA` LIKE ?", gs.Database)
+	rows, err := connection.Query("SELECT DISTINCT(TABLE_NAME) FROM `information_schema`.`COLUMNS` WHERE `TABLE_SCHEMA` LIKE ?", g.Database)
 	if err != nil {
 		return err
 	}
+
 	for rows.Next() {
 		wg.Add(1)
 		var tbl table
 		rows.Scan(&tbl.Name)
-		work <- &job{gs, tbl.Name}
+		g.work <- tbl.Name
+		g.total++
 	}
 
 	return nil
 }
 
 //Run handles the run for a single table
-func Run(gs Gostruct, table string) error {
+func (g Gostruct) Run(table string) {
 	//make sure models dir exists
 	if !exists(GOPATH + "/src/models") {
 		err = createDirectory(GOPATH + "/src/models")
 		if err != nil {
-			return err
+			g.errorChan <- err
+			return
 		}
 	}
 
 	log.Println("Building package:", table)
 
-	con, err := getConnection(gs)
+	con, err := getConnection(g)
 	if err != nil {
-		return err
+		g.errorChan <- err
+		return
 	}
 
-	rows1, err := con.Query("SELECT column_name, is_nullable, column_key, data_type, column_type, column_default, extra FROM information_schema.columns WHERE table_name = ? AND table_schema = ?", table, gs.Database)
+	rows1, err := con.Query("SELECT column_name, is_nullable, column_key, data_type, column_type, column_default, extra FROM information_schema.columns WHERE table_name = ? AND table_schema = ?", table, g.Database)
+	if err != nil {
+		g.errorChan <- err
+		return
+	}
 
 	var object tableObj
 	var objects []tableObj
@@ -233,9 +241,6 @@ func Run(gs Gostruct, table string) error {
 
 	tableNaming := uppercaseFirst(table)
 
-	if err != nil {
-		return err
-	}
 	cntPK := 0
 	for rows1.Next() {
 		rows1.Scan(&object.Name, &object.IsNullable, &object.Key, &object.DataType, &object.ColumnType, &object.Default, &object.Extra)
@@ -251,7 +256,8 @@ func Run(gs Gostruct, table string) error {
 	defer rows1.Close()
 
 	if len(objects) == 0 {
-		return errors.New("No results for table: " + table)
+		g.errorChan <- errors.New("No results for table: " + table)
+		return
 	}
 
 	//create directory
@@ -259,39 +265,44 @@ func Run(gs Gostruct, table string) error {
 	if !exists(dir) {
 		err := os.Mkdir(dir, 0777)
 		if err != nil {
-			return err
+			g.errorChan <- err
+			return
 		}
 
 		//give new directory full permissions
 		err = os.Chmod(dir, 0777)
 		if err != nil {
-			return err
+			g.errorChan <- err
+			return
 		}
 	}
 
 	//handle CRUX file
-	err = buildBase(gs, objects, table)
+	err = g.buildBase(objects, table)
 	if err != nil {
-		return err
+		g.errorChan <- err
+		return
 	}
 
 	//handle DAO file
 	err = buildExtended(table)
 	if err != nil {
-		return err
+		g.errorChan <- err
+		return
 	}
 
 	//handle Test file
 	err = buildTest(table)
 	if err != nil {
-		return err
+		g.errorChan <- err
+		return
 	}
 
-	return nil
+	g.add <- 1
 }
 
 //Builds {table}_base.go file with main struct and CRUD functionality
-func buildBase(gs Gostruct, objects []tableObj, table string) error {
+func (g Gostruct) buildBase(objects []tableObj, table string) error {
 	tableNaming := uppercaseFirst(table)
 	lowerTable := strings.ToLower(table)
 
@@ -303,11 +314,11 @@ func buildBase(gs Gostruct, objects []tableObj, table string) error {
 	var primaryKeys, primaryKeyTypes, questionMarks []string
 	var funcName string
 
-	if gs.NameFuncs {
+	if g.NameFuncs {
 		funcName = tableNaming
 	}
 	initialString := `//Package ` + tableNaming + ` contains base methods and CRUD functionality to
-//interact with the ` + table + ` table in the ` + gs.Database + ` database
+//interact with the ` + table + ` table in the ` + g.Database + ` database
 package ` + tableNaming
 	importString := `
 
@@ -351,11 +362,11 @@ Loop:
 				nilDataType = "int64"
 			}
 		case "tinyint", "smallint":
-			con, err := getConnection(gs)
+			con, err := getConnection(g)
 			if err != nil {
 				return err
 			}
-			rows, err := con.Query("SELECT DISTINCT(`" + object.Name + "`) FROM " + gs.Database + "." + table)
+			rows, err := con.Query("SELECT DISTINCT(`" + object.Name + "`) FROM " + g.Database + "." + table)
 			if err != nil {
 				return err
 			}
@@ -612,7 +623,7 @@ func ReadAll` + funcName + `(options ...connection.QueryOptions) ([]*` + tableNa
 func Read` + funcName + `ByQuery(query string, args ...interface{}) ([]*` + tableNaming + `, error) {
 	var objects []*` + tableNaming + `
 
-	con, err := connection.Get("` + gs.Database + `")
+	con, err := connection.Get("` + g.Database + `")
 	if err != nil {
 		return objects, errors.Wrap(err, "connection failed")
 	}
@@ -650,7 +661,7 @@ func Read` + funcName + `ByQuery(query string, args ...interface{}) ([]*` + tabl
 func ReadOne` + funcName + `ByQuery(query string, args ...interface{}) (*` + tableNaming + `, error) {
 	var obj ` + lowerTable + `
 
-	con, err := connection.Get("` + gs.Database + `")
+	con, err := connection.Get("` + g.Database + `")
 	if err != nil {
 		return nil, errors.Wrap(err, "connection failed")
 	}
@@ -666,7 +677,7 @@ func ReadOne` + funcName + `ByQuery(query string, args ...interface{}) (*` + tab
 
 //Exec allows for update queries
 func ` + funcName + `Exec(query string, args ...interface{}) (sql.Result, error) {
-	con, err := connection.Get("` + gs.Database + `")
+	con, err := connection.Get("` + g.Database + `")
 	if err != nil {
 		return nil, errors.Wrap(err, "connection failed")
 	}
@@ -1025,30 +1036,35 @@ func BuildQuery(v reflect.Value, valType reflect.Type) ([]interface{}, []string,
 	return nil
 }
 
-//func startWorker(work <-chan runfunc, results chan<- error) {
-func startWorker(work <-chan *job, add chan<- int) {
-	for job := range work {
-		err := Run(job.gs, job.table)
-		if err != nil {
-			panic(err)
-		}
-		add <- 1
-		wg.Done()
-	}
-}
-
 //startTime keeps a timer of the duration of the process
-func startTimer(gs *Gostruct) func() {
+func startTimer(g *Gostruct) func() {
 	t := time.Now()
 	return func() {
 		d := time.Now().Sub(t)
-		println("\n\n======= Results =======")
-		fmt.Println("Processed:", gs.Processed)
+		printNoSpace("\n======= Results =======\n")
+		fmt.Println("Processed:", g.processed)
 		fmt.Println("Duration:", d)
+
+		if g.errored > 0 {
+			printNoSpace("\n======= Errors: ", g.errored, "/", g.processed, " =======\n")
+			for i, err := range g.errors {
+				fmt.Println(i+1, ":", err.Error())
+			}
+		}
 	}
 }
 
 //getConnection is a helper to return a connection & an error
 func getConnection(gs Gostruct) (*sql.DB, error) {
 	return sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", gs.Username, gs.Password, gs.Host, gs.Port, gs.Database))
+}
+
+//printNoSpace is a println implementation without automatically putting a space between args
+func printNoSpace(args ...interface{}) {
+	var s string
+	for _, arg := range args {
+		s += fmt.Sprint(arg)
+	}
+
+	fmt.Print(s)
 }
