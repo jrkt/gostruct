@@ -13,7 +13,13 @@ examples_test.go - Includes auto-generated example methods based on the auto-gen
 
 It will also generate a connection package to share connection(s) to prevent multiple open database connections.
 
+Dependencies:
+
         go get github.com/go-sql-driver/mysql
+        go get github.com/pkg/errors
+
+Installation:
+
         go get github.com/jonathankentstevens/gostruct
 
 Create a generate.go file with the following contents (including your db username/password):
@@ -26,8 +32,8 @@ Create a generate.go file with the following contents (including your db usernam
 
 	func main() {
 		gs := new(gostruct.Gostruct)
-		gs.Username = "root"
-		gs.Password = "Jstevens120)"
+		gs.Username = "{username}"
+		gs.Password = "{password}"
 		err := gs.Generate()
 		if err != nil {
 			println("Generate Error:", err)
@@ -121,7 +127,7 @@ func init() {
 	}
 }
 
-//Generate table model for mysql
+//Generate serves as the main method to build package
 func (g *Gostruct) Generate() error {
 
 	tbls := flag.String("tables", "", "Comma separated list of tables")
@@ -141,7 +147,7 @@ func (g *Gostruct) Generate() error {
 	g.errorChan = make(chan error, 1)
 	work := make(chan string, 1)
 
-	go g.handler(work)
+	go g.handler()
 
 	for i := 0; i < 50; i++ {
 		go g.worker(work)
@@ -174,8 +180,8 @@ func (g *Gostruct) Generate() error {
 	return nil
 }
 
-//counter provides a safe way to keep count of the processed table count
-func (g *Gostruct) handler(work chan<- string) {
+//handler provides a safe way to keep count of the processed table count
+func (g *Gostruct) handler() {
 	for {
 		select {
 		case cnt := <-g.add:
@@ -189,6 +195,7 @@ func (g *Gostruct) handler(work chan<- string) {
 	}
 }
 
+//worker loops through & runs all jobs in the work queue
 func (g Gostruct) worker(work <-chan string) {
 	for table := range work {
 		g.Run(table)
@@ -317,9 +324,8 @@ func (g Gostruct) buildBase(objects []tableObj, table string) error {
 	importTime, importMysql := false, false
 
 	var usedColumns []usedColumn
-	var scanStr, scanStr2, nilExtension string
+	var scanStr, scanStr2, nilExtension, funcName string
 	var primaryKeys, primaryKeyTypes, questionMarks []string
-	var funcName string
 
 	if g.NameFuncs {
 		funcName = tableNaming
