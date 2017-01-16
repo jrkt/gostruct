@@ -72,8 +72,6 @@ type Gostruct struct {
 	add       chan int
 	totalChan chan int
 	errorChan chan error
-	write     chan filewrite
-	run       chan string
 	processed int
 	errored   int
 	errors    []error
@@ -94,12 +92,6 @@ type tableObj struct {
 
 type table struct {
 	Name string
-}
-
-type filewrite struct {
-	name      string
-	contents  string
-	overwrite bool
 }
 
 type usedColumn struct {
@@ -155,8 +147,6 @@ func (g *Gostruct) Generate() error {
 	g.add = make(chan int, 1)
 	g.errorChan = make(chan error, 1)
 	g.totalChan = make(chan int, 1)
-	g.write = make(chan filewrite, 1)
-	g.run = make(chan string, 1)
 	work := make(chan string, 1)
 
 	go g.handler()
@@ -192,29 +182,20 @@ func (g *Gostruct) Generate() error {
 	return nil
 }
 
-//handler provides a safe way to keep count of the processed table count
+//handler provides a safe way to perform all concurrent tasks
 func (g *Gostruct) handler() {
 	for {
 		select {
 		case cnt := <-g.add:
 			g.processed += cnt
 			wg.Done()
-			go showProgress(*g)
+			showProgress(*g)
 		case cnt := <-g.totalChan:
 			g.total += cnt
 		case err := <-g.errorChan:
 			g.errored++
 			g.errors = append(g.errors, err)
-		case fw := <-g.write:
-			err := writeFile(fw.name, fw.contents, fw.overwrite)
-			if err != nil {
-				g.errorChan <- err
-			}
-		case cmd := <-g.run:
-			_, err := runCommand(cmd)
-			if err != nil {
-				g.errorChan <- err
-			}
+			println("ERROR:", err.Error())
 		}
 	}
 }
@@ -223,7 +204,6 @@ func (g *Gostruct) handler() {
 func (g Gostruct) worker(work <-chan string) {
 	for table := range work {
 		g.Run(table)
-		g.totalChan <- 1
 	}
 }
 
@@ -233,6 +213,17 @@ func (g *Gostruct) RunAll(work chan<- string) error {
 	if err != nil {
 		return err
 	}
+
+	type Count struct {
+		cnt int
+	}
+	var count Count
+	err = connection.QueryRow("SELECT COUNT(DISTINCT(TABLE_NAME)) FROM `information_schema`.`COLUMNS` WHERE `TABLE_SCHEMA` LIKE ?", g.Database).Scan(&count.cnt)
+	if err != nil {
+		return err
+	}
+	g.totalChan <- count.cnt
+
 	rows, err := connection.Query("SELECT DISTINCT(TABLE_NAME) FROM `information_schema`.`COLUMNS` WHERE `TABLE_SCHEMA` LIKE ?", g.Database)
 	if err != nil {
 		return err
@@ -298,7 +289,7 @@ func (g Gostruct) Run(table string) {
 		return
 	}
 
-	//create directory
+	//create directory if needed
 	dir := GOPATH + "/src/models/" + tableNaming + "/"
 	if !exists(dir) {
 		err := os.Mkdir(dir, 0777)
@@ -315,31 +306,23 @@ func (g Gostruct) Run(table string) {
 		}
 	}
 
-	//handle CRUX file
+	//handle base file
 	err = g.buildBase(objects, table)
 	if err != nil {
 		g.errorChan <- err
 		return
 	}
 
-	//handle DAO file
-	err = g.buildExtended(table)
-	if err != nil {
-		g.errorChan <- err
-		return
-	}
+	//handle extended file
+	g.buildExtended(table)
 
 	//handle Test file
-	err = g.buildTest(table)
-	if err != nil {
-		g.errorChan <- err
-		return
-	}
+	g.buildTest(table)
 
 	g.add <- 1
 }
 
-//Builds {table}_base.go file with main struct and CRUD functionality
+//buildBase builds the {table}_base.go file with main struct and CRUD functionality
 func (g Gostruct) buildBase(objects []tableObj, table string) error {
 	tableNaming := uppercaseFirst(table)
 	lowerTable := strings.ToLower(table)
@@ -724,30 +707,42 @@ func ` + funcName + `Exec(query string, args ...interface{}) (sql.Result, error)
 	importString += "\n)"
 
 	autoGenFile := dir + tableNaming + "_base.go"
-	g.write <- filewrite{autoGenFile, initialString + importString + string1, true}
-	g.run <- "go fmt " + autoGenFile
-
-	return nil
-}
-
-//Builds {table}_extends.go file for custom functions & methods
-func (g Gostruct) buildExtended(table string) error {
-	tableNaming := uppercaseFirst(table)
-	dir := GOPATH + "/src/models/" + tableNaming + "/"
-	daoFilePath := dir + tableNaming + "_extended.go"
-
-	if !exists(daoFilePath) {
-		contents := "package " + tableNaming + "\n\n//Methods Here"
-		g.write <- filewrite{daoFilePath, contents, false}
+	//g.write <- filewrite{autoGenFile, initialString + importString + string1, true}
+	err := writeFile(autoGenFile, initialString+importString+string1, true)
+	if err != nil {
+		g.errorChan <- err
 	}
 
-	g.run <- "go fmt " + daoFilePath
+	_, err = runCommand("go fmt " + autoGenFile)
+	if err != nil {
+		g.errorChan <- err
+	}
 
 	return nil
 }
 
-//Builds skeleton {table}_test.go file to hold all unit tests
-func (g Gostruct) buildTest(table string) error {
+//buildExtended builds the {table}_extends.go file for custom functions & methods
+func (g Gostruct) buildExtended(table string) {
+	tableNaming := uppercaseFirst(table)
+	dir := GOPATH + "/src/models/" + tableNaming + "/"
+	extendedFilePath := dir + tableNaming + "_extended.go"
+
+	if !exists(extendedFilePath) {
+		contents := "package " + tableNaming + "\n\n//Methods Here"
+		//g.write <- filewrite{daoFilePath, contents, false}
+		err := writeFile(extendedFilePath, contents, false)
+		if err != nil {
+			g.errorChan <- err
+		}
+		_, err = runCommand("go fmt " + extendedFilePath)
+		if err != nil {
+			g.errorChan <- err
+		}
+	}
+}
+
+//buildTest builds the skeleton {table}_test.go file to hold all unit tests
+func (g Gostruct) buildTest(table string) {
 	tableNaming := uppercaseFirst(table)
 	dir := GOPATH + "/src/models/" + tableNaming + "/"
 	testFilePath := dir + tableNaming + "_test.go"
@@ -762,15 +757,19 @@ func (g Gostruct) buildTest(table string) error {
 		func TestSomething(t *testing.T) {
 			//test stuff here..
 		}`
-		g.write <- filewrite{testFilePath, contents, false}
+		//g.write <- filewrite{testFilePath, contents, false}
+		err := writeFile(testFilePath, contents, false)
+		if err != nil {
+			g.errorChan <- err
+		}
+		_, err = runCommand("go fmt " + testFilePath)
+		if err != nil {
+			g.errorChan <- err
+		}
 	}
-
-	g.run <- "go fmt " + testFilePath
-
-	return nil
 }
 
-//Builds extract package
+//buildExtractPkg.. well, builds the extract package
 func buildExtractPkg() error {
 	filePath := GOPATH + "/src/utils/extract/extract.go"
 	if !exists(GOPATH + "/src/utils/extract") {
@@ -902,7 +901,7 @@ func InArray(char string, strings []string) bool {
 	return nil
 }
 
-//Builds main connection package for serving up all database connections
+//buildConnectionPkg builds the main connection package for serving up all database connections
 //with a shared connection pool
 func buildConnectionPkg() error {
 	if !exists(GOPATH + "/src/connection") {
@@ -1054,7 +1053,7 @@ func BuildQuery(v reflect.Value, valType reflect.Type) ([]interface{}, []string,
 	return nil
 }
 
-//startTime keeps a timer of the duration of the process
+//startTimer keeps a timer of the duration of the process
 func startTimer(g *Gostruct) func() {
 	t := time.Now()
 	return func() {
