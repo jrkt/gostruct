@@ -33,7 +33,7 @@ func uppercaseFirst(s string) string {
 
 //createDirectory creates directory and sets permissions to 0777
 func createDirectory(path string) error {
-	err = os.Mkdir(path, 0777)
+	err := os.Mkdir(path, 0777)
 	if err != nil {
 		return err
 	}

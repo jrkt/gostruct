@@ -104,7 +104,6 @@ type uniqueValues struct {
 
 //Globals variables
 var (
-	err    error
 	GOPATH string
 	wg     sync.WaitGroup
 )
@@ -116,7 +115,7 @@ func init() {
 		GOPATH = GOPATH[:last]
 	}
 
-	err = buildConnectionPkg()
+	err := buildConnectionPkg()
 	if err != nil {
 		panic(err)
 	}
@@ -159,7 +158,7 @@ func (g *Gostruct) Generate() error {
 	defer stop()
 
 	if *all {
-		err = g.RunAll(work)
+		err := g.RunAll(work)
 		if err != nil {
 			return err
 		}
@@ -243,7 +242,7 @@ func (g *Gostruct) RunAll(work chan<- string) error {
 func (g Gostruct) Run(table string) {
 	//make sure models dir exists
 	if !exists(GOPATH + "/src/models") {
-		err = createDirectory(GOPATH + "/src/models")
+		err := createDirectory(GOPATH + "/src/models")
 		if err != nil {
 			g.errorChan <- err
 			return
@@ -773,7 +772,7 @@ func (g Gostruct) buildTest(table string) {
 func buildExtractPkg() error {
 	filePath := GOPATH + "/src/utils/extract/extract.go"
 	if !exists(GOPATH + "/src/utils/extract") {
-		err = createDirectory(GOPATH + "/src/utils/extract")
+		err := createDirectory(GOPATH + "/src/utils/extract")
 		if err != nil {
 			return err
 		}
@@ -887,7 +886,7 @@ func InArray(char string, strings []string) bool {
 }
 
 `
-		err = writeFile(filePath, contents, false)
+		err := writeFile(filePath, contents, false)
 		if err != nil {
 			return err
 		}
@@ -905,7 +904,7 @@ func InArray(char string, strings []string) bool {
 //with a shared connection pool
 func buildConnectionPkg() error {
 	if !exists(GOPATH + "/src/connection") {
-		err = createDirectory(GOPATH + "/src/connection")
+		err := createDirectory(GOPATH + "/src/connection")
 		if err != nil {
 			return err
 		}
@@ -1040,12 +1039,12 @@ func BuildQuery(v reflect.Value, valType reflect.Type) ([]interface{}, []string,
 }
 
 `
-	err = writeFile(conFilePath, contents, false)
+	err := writeFile(conFilePath, contents, false)
 	if err != nil {
 		return err
 	}
 
-	_, err := runCommand("go fmt " + conFilePath)
+	_, err = runCommand("go fmt " + conFilePath)
 	if err != nil {
 		return err
 	}
