@@ -70,7 +70,10 @@ type Gostruct struct {
 	Password  string
 	NameFuncs bool
 	add       chan int
+	totalChan chan int
 	errorChan chan error
+	write     chan filewrite
+	run       chan string
 	processed int
 	errored   int
 	errors    []error
@@ -91,6 +94,12 @@ type tableObj struct {
 
 type table struct {
 	Name string
+}
+
+type filewrite struct {
+	name      string
+	contents  string
+	overwrite bool
 }
 
 type usedColumn struct {
@@ -145,6 +154,9 @@ func (g *Gostruct) Generate() error {
 
 	g.add = make(chan int, 1)
 	g.errorChan = make(chan error, 1)
+	g.totalChan = make(chan int, 1)
+	g.write = make(chan filewrite, 1)
+	g.run = make(chan string, 1)
 	work := make(chan string, 1)
 
 	go g.handler()
@@ -187,10 +199,22 @@ func (g *Gostruct) handler() {
 		case cnt := <-g.add:
 			g.processed += cnt
 			wg.Done()
-			showProgress(*g)
+			go showProgress(*g)
+		case cnt := <-g.totalChan:
+			g.total += cnt
 		case err := <-g.errorChan:
 			g.errored++
 			g.errors = append(g.errors, err)
+		case fw := <-g.write:
+			err := writeFile(fw.name, fw.contents, fw.overwrite)
+			if err != nil {
+				g.errorChan <- err
+			}
+		case cmd := <-g.run:
+			_, err := runCommand(cmd)
+			if err != nil {
+				g.errorChan <- err
+			}
 		}
 	}
 }
@@ -199,6 +223,7 @@ func (g *Gostruct) handler() {
 func (g Gostruct) worker(work <-chan string) {
 	for table := range work {
 		g.Run(table)
+		g.totalChan <- 1
 	}
 }
 
@@ -218,7 +243,6 @@ func (g *Gostruct) RunAll(work chan<- string) error {
 		var tbl table
 		rows.Scan(&tbl.Name)
 		work <- tbl.Name
-		g.total++
 	}
 
 	return nil
@@ -299,14 +323,14 @@ func (g Gostruct) Run(table string) {
 	}
 
 	//handle DAO file
-	err = buildExtended(table)
+	err = g.buildExtended(table)
 	if err != nil {
 		g.errorChan <- err
 		return
 	}
 
 	//handle Test file
-	err = buildTest(table)
+	err = g.buildTest(table)
 	if err != nil {
 		g.errorChan <- err
 		return
@@ -700,43 +724,30 @@ func ` + funcName + `Exec(query string, args ...interface{}) (sql.Result, error)
 	importString += "\n)"
 
 	autoGenFile := dir + tableNaming + "_base.go"
-	err = writeFile(autoGenFile, initialString+importString+string1, true)
-	if err != nil {
-		return err
-	}
-
-	_, err = runCommand("go fmt " + autoGenFile)
-	if err != nil {
-		return err
-	}
+	g.write <- filewrite{autoGenFile, initialString + importString + string1, true}
+	g.run <- "go fmt " + autoGenFile
 
 	return nil
 }
 
-//Builds {table}_extends.go file for custom Data Access Object methods
-func buildExtended(table string) error {
+//Builds {table}_extends.go file for custom functions & methods
+func (g Gostruct) buildExtended(table string) error {
 	tableNaming := uppercaseFirst(table)
 	dir := GOPATH + "/src/models/" + tableNaming + "/"
 	daoFilePath := dir + tableNaming + "_extended.go"
 
 	if !exists(daoFilePath) {
 		contents := "package " + tableNaming + "\n\n//Methods Here"
-		err = writeFile(daoFilePath, contents, false)
-		if err != nil {
-			return err
-		}
+		g.write <- filewrite{daoFilePath, contents, false}
 	}
 
-	_, err := runCommand("go fmt " + daoFilePath)
-	if err != nil {
-		return err
-	}
+	g.run <- "go fmt " + daoFilePath
 
 	return nil
 }
 
-//Builds {table}_test.go file
-func buildTest(table string) error {
+//Builds skeleton {table}_test.go file to hold all unit tests
+func (g Gostruct) buildTest(table string) error {
 	tableNaming := uppercaseFirst(table)
 	dir := GOPATH + "/src/models/" + tableNaming + "/"
 	testFilePath := dir + tableNaming + "_test.go"
@@ -751,16 +762,10 @@ func buildTest(table string) error {
 		func TestSomething(t *testing.T) {
 			//test stuff here..
 		}`
-		err = writeFile(testFilePath, contents, false)
-		if err != nil {
-			return err
-		}
+		g.write <- filewrite{testFilePath, contents, false}
 	}
 
-	_, err := runCommand("go fmt " + testFilePath)
-	if err != nil {
-		return err
-	}
+	g.run <- "go fmt " + testFilePath
 
 	return nil
 }
