@@ -41,7 +41,7 @@ Then, run:
     
 A package with a struct of the table and several methods to handle common requests will be created in the $GOPATH/src/models/{table} directory. The files that are created, for a 'User' model (for example) would be:
 
-- User_base.go 
+- User_base.go
     
     - contains the main CRUD methods: Save(insert/update) & Delete, and common functions such as: ReadByKey, ReadAll, ReadOneByQuery, ReadByQuery, and Exec
     
