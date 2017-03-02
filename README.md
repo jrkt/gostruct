@@ -34,10 +34,14 @@ func main() {
 	}
 }
 ```
-    
-Then, run:
 
-	go run generate.go -tables table1,table2 -db main -host 127.0.0.1
+Assume you had a 'user' table with the following schema:
+
+<img src="user-table-schema.png" />
+
+...you would run:
+
+	go run generate.go -tables user -db {db} -host {host}
     
 A package with a struct of the table and several methods to handle common requests will be created in the $GOPATH/src/models/{table} directory. The files that are created, for a 'User' model (for example) would be:
 
@@ -45,15 +49,13 @@ A package with a struct of the table and several methods to handle common reques
     
     - contains the main CRUD methods: Save(insert/update) & Delete, and common functions such as: ReadByKey, ReadAll, ReadOneByQuery, ReadByQuery, and Exec
     
-    - This also validates any enum/set data type with the value passed to ensure it is one of the required fields
+    - This also validates any enum/set data type with the value passed to ensure it is one of the required fields before persisting to the database
 - User_extended.go
     
-    - this will hold any custom methods used to return User object(s)
+    - this will hold any custom methods and functions used in accordance with the User model. This package should not import any other model packages to avoid cyclical imports
 - User_test.go
     
     - serves as a base for your unit testing
-    
-<!--- examples_test.go with auto-generated example methods for godoc readability. -->
 
 It will also generate a connection package to share connection(s) to prevent multiple open database connections. The generated package(s) implement the connection.Info interface that allows you derive the 
 type and typeId (table & primary key) from any object by simple calling:
@@ -62,6 +64,10 @@ type and typeId (table & primary key) from any object by simple calling:
 user, _ := User.ReadByKey(12345)
 table, pk := user.TypeInfo()
 ```
+
+The pattern for generating packages for multiple tables is just a comma-separated list:
+
+    go run generate.go -tables table1,table2,table3 -db {db} -host {host}
 
 # flags 
 
@@ -98,31 +104,40 @@ import (
 )
 
 func main() {
-    //retrieve existing user by id
-    user, err := User.ReadById(12345)
+    // retrieve existing user by id
+    user, err := User.ReadByKey(12345)
     if err != nil {
-        //handle error
+        // handle error
     }
 	user.Email = "test@email.com"
-    user.IsActive = false
     user.Save()    
     
-    //create new user
-    user := new(User.UserObj)
+    // create new user
+    user := new(User.User)
     user.Email = "test@email.com"
     res, err := user.Save()
     if err != nil {
-    	//Save failed
+    	// save failed
     }
 
-    //delete user
+    // delete user
     _, err := user.Delete()
     if err != nil {
-    	//Delete failed
+    	// delete failed
     }
 }
 ```
-# User_extended.go - sample function to include
+
+# developers
+
+  - extend the functionality of connection.QueryOptions to include Offset and other common MySQL query options
+        
+      - to do this, update the connection.QueryOptions struct to include any new options and then update the connection.ApplyQueryOptions function to handle the new options
+
+# example generated code
+
+<b>User_extended.go - sample function to include</b>
+
 ```go
 func ReadAllActive(options connection.QueryOptions) ([]*UserObj, error) {
 	return ReadByQuery("SELECT * FROM User WHERE IsActive = '1'", options)
@@ -133,23 +148,25 @@ Usage:
 func main() {
 	users, err := User.ReadAllActive(connection.QueryOptions{OrderBy: "Name ASC"})
 	if err != nil {
-		//handle error
+		// handle error
 	}
 	
-	//handle users
+	// handle users
 	for _, user := range users {
 	    
 	}
 }
 ```
-# User_extended.go - sample method to include
+
+<b>User_extended.go - sample method to include</b>
+
 ```go
 func (user *UserObj) Terminate() error {
 	user.IsActive = false
 	user.TerminationDate = time.Now().Local()
 	_, err := user.Save()
 	if err != nil {
-		//Save failed
+		// save failed
 		return err
 	}
 	return nil
@@ -160,19 +177,23 @@ Usage:
 func main() {
 	users, err := User.ReadAllActive(connection.QueryOptions{OrderBy: "Name ASC"})
 	if err != nil {
-	    //read failed or no results found
+	    // read failed or no results found
 	} else {
-	    //handle users
+	    // handle users
 		for _, user := range users {
-			user.Terminate()
+			err = user.Terminate()
+			if err != nil {
+			    // handle error 
+			}
 		}
 	}
 }
 ```
-# User_base.go - sample file
+
+<b>User_base.go - sample file</b>
 ```go
-//Package User contains base methods and CRUD functionality to
-//interact with the user table in the main database
+// Package User contains base methods and CRUD functionality to
+// interact with the user table in the sys database
 package User
 
 import (
@@ -180,44 +201,33 @@ import (
 	"database/sql"
 	"reflect"
 	"strings"
-	"time"
 
-	"github.com/go-sql-driver/mysql"
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/pkg/errors"
 )
 
-//User is the structure of the home table
+// User is the structure of the home table
 type User struct {
-	Id            int64      `column:"id" default:"" type:"int(11)" key:"PRI" null:"NO" extra:"auto_increment"`
-	Age           *int64     `column:"age" default:"" type:"int(11)" key:"" null:"YES" extra:""`
-	Name          string     `column:"name" default:"" type:"varchar(45)" key:"" null:"NO" extra:""`
-	Occupation    *string    `column:"occupation" default:"" type:"varchar(45)" key:"" null:"YES" extra:""`
-	Active        bool       `column:"active" default:"" type:"tinyint(1)" key:"" null:"NO" extra:""`
-	Cool          *bool      `column:"cool" default:"" type:"tinyint(1)" key:"" null:"YES" extra:""`
-	Signup_date   time.Time  `column:"signup_date" default:"CURRENT_TIMESTAMP" type:"timestamp" key:"" null:"NO" extra:"on update CURRENT_TIMESTAMP"`
-	Inactive_date *time.Time `column:"inactive_date" default:"" type:"timestamp" key:"" null:"YES" extra:""`
-	Main_interest string     `column:"main_interest" default:"" type:"enum('sports','family','programming')" key:"" null:"NO" extra:""`
+	Id    int64  `column:"id" default:"" type:"int(11)" key:"PRI" null:"NO" extra:"auto_increment"`
+	Name  string `column:"name" default:"" type:"varchar(45)" key:"" null:"NO" extra:""`
+	Email string `column:"email" default:"" type:"varchar(200)" key:"" null:"NO" extra:""`
+	Age   *int64 `column:"age" default:"" type:"int(11)" key:"" null:"YES" extra:""`
 }
 
-//user is the nilable structure of the home table
+// user is the nilable structure of the home table
 type user struct {
-	Id            int64
-	Age           sql.NullInt64
-	Name          string
-	Occupation    sql.NullString
-	Active        bool
-	Cool          sql.NullBool
-	Signup_date   time.Time
-	Inactive_date mysql.NullTime
-	Main_interest string
+	Id    int64
+	Name  string
+	Email string
+	Age   sql.NullInt64
 }
 
-//TableName returns the name of the mysql table
+// TableName returns the name of the mysql table
 func (obj *User) TableName() string {
 	return "user"
 }
 
-//PrimaryKeyInfo returns the string value of the primary key column and the corresponding value for the receiver
+// PrimaryKeyInfo returns the string value of the primary key column and the corresponding value for the receiver
 func (obj *User) PrimaryKeyInfo() (string, interface{}) {
 	val := reflect.ValueOf(obj).Elem()
 	var objTypeId interface{}
@@ -239,13 +249,13 @@ func (obj *User) PrimaryKeyInfo() (string, interface{}) {
 	return "id", objTypeId
 }
 
-//TypeInfo implements mysql.Info interface to allow for retrieving type/typeId for any db model
+// TypeInfo implements mysql.Info interface to allow for retrieving type/typeId for any db model
 func (obj *User) TypeInfo() (string, interface{}) {
 	_, pkVal := obj.PrimaryKeyInfo()
 	return "user", pkVal
 }
 
-//Save runs an INSERT..UPDATE ON DUPLICATE KEY and validates each value being saved
+// Save runs an INSERT..UPDATE ON DUPLICATE KEY and validates each value being saved
 func (obj *User) Save() (sql.Result, error) {
 	v := reflect.ValueOf(obj).Elem()
 	args, columns, q, updateStr, err := connection.BuildQuery(v, v.Type())
@@ -271,26 +281,26 @@ func (obj *User) Save() (sql.Result, error) {
 	return res, err
 }
 
-//Delete removes a record from the database according to the primary key
+// Delete removes a record from the database according to the primary key
 func (obj *User) Delete() (sql.Result, error) {
 	return Exec("DELETE FROM user WHERE id = ?", obj.Id)
 }
 
-//ReadByKey returns a single pointer to a(n) User
+// ReadByKey returns a single pointer to a(n) User
 func ReadByKey(id int64) (*User, error) {
 	return ReadOneByQuery("SELECT * FROM user WHERE id = ?", id)
 }
 
-//ReadAll returns all records in the table
+// ReadAll returns all records in the table
 func ReadAll(options ...connection.QueryOptions) ([]*User, error) {
 	return ReadByQuery("SELECT * FROM user", options)
 }
 
-//ReadByQuery returns an array of User pointers
+// ReadByQuery returns an array of User pointers
 func ReadByQuery(query string, args ...interface{}) ([]*User, error) {
 	var objects []*User
 
-	con, err := connection.Get("main")
+	con, err := connection.Get("sys")
 	if err != nil {
 		return objects, errors.Wrap(err, "connection failed")
 	}
@@ -310,11 +320,11 @@ func ReadByQuery(query string, args ...interface{}) ([]*User, error) {
 	defer rows.Close()
 	for rows.Next() {
 		var obj user
-		err = rows.Scan(&obj.Id, &obj.Age, &obj.Name, &obj.Occupation, &obj.Active, &obj.Cool, &obj.Signup_date, &obj.Inactive_date, &obj.Main_interest)
+		err = rows.Scan(&obj.Id, &obj.Name, &obj.Email, &obj.Age)
 		if err != nil {
 			return objects, errors.Wrap(err, "scan error")
 		}
-		objects = append(objects, &User{obj.Id, &obj.Age.Int64, obj.Name, &obj.Occupation.String, obj.Active, &obj.Cool.Bool, obj.Signup_date, &obj.Inactive_date.Time, obj.Main_interest})
+		objects = append(objects, &User{obj.Id, obj.Name, obj.Email, &obj.Age.Int64})
 	}
 
 	if len(objects) == 0 {
@@ -324,27 +334,27 @@ func ReadByQuery(query string, args ...interface{}) ([]*User, error) {
 	return objects, err
 }
 
-//ReadOneByQuery returns a single pointer to a(n) User
+// ReadOneByQuery returns a single pointer to a(n) User
 func ReadOneByQuery(query string, args ...interface{}) (*User, error) {
 	var obj user
 
-	con, err := connection.Get("main")
+	con, err := connection.Get("sys")
 	if err != nil {
 		return nil, errors.Wrap(err, "connection failed")
 	}
 
 	query = strings.Replace(query, "'", "\"", -1)
-	err = con.QueryRow(query, args...).Scan(&obj.Id, &obj.Age, &obj.Name, &obj.Occupation, &obj.Active, &obj.Cool, &obj.Signup_date, &obj.Inactive_date, &obj.Main_interest)
+	err = con.QueryRow(query, args...).Scan(&obj.Id, &obj.Name, &obj.Email, &obj.Age)
 	if err != nil && err != sql.ErrNoRows {
 		return nil, errors.Wrap(err, "query/scan error")
 	}
 
-	return &User{obj.Id, &obj.Age.Int64, obj.Name, &obj.Occupation.String, obj.Active, &obj.Cool.Bool, obj.Signup_date, &obj.Inactive_date.Time, obj.Main_interest}, nil
+	return &User{obj.Id, obj.Name, obj.Email, &obj.Age.Int64}, nil
 }
 
-//Exec allows for update queries
+// Exec allows for update queries
 func Exec(query string, args ...interface{}) (sql.Result, error) {
-	con, err := connection.Get("main")
+	con, err := connection.Get("sys")
 	if err != nil {
 		return nil, errors.Wrap(err, "connection failed")
 	}
@@ -352,7 +362,7 @@ func Exec(query string, args ...interface{}) (sql.Result, error) {
 }
 ```
 
-# User_test.go - sample skeleton file generated
+<b>User_test.go - sample skeleton file generated</b>
 ```go
 package User_test
 

@@ -57,11 +57,11 @@ import (
 	"sync"
 	"time"
 
-	//imported to allow mysql driver to be used
+	// imported to allow mysql driver to be used
 	_ "github.com/go-sql-driver/mysql"
 )
 
-//Gostruct is the main holding object for connection information
+// Gostruct is the main holding object for connection information
 type Gostruct struct {
 	Database  string
 	Host      string
@@ -78,8 +78,8 @@ type Gostruct struct {
 	total     int
 }
 
-//tableObj is the result set returned from the MySQL information_schema that
-//contains all data for a specific table
+// tableObj is the result set returned from the MySQL information_schema that
+// contains all data for a specific table
 type tableObj struct {
 	Name       string
 	IsNullable string
@@ -102,13 +102,13 @@ type uniqueValues struct {
 	Value sql.NullString
 }
 
-//Globals variables
+// Globals variables
 var (
 	GOPATH string
 	wg     sync.WaitGroup
 )
 
-//initialize global GOPATH
+// initialize global GOPATH
 func init() {
 	GOPATH = os.Getenv("GOPATH")
 	if last := len(GOPATH) - 1; last >= 0 && GOPATH[last] == '/' {
@@ -120,14 +120,14 @@ func init() {
 		panic(err)
 	}
 
-	//handle extract file
+	// handle extract file
 	err = buildExtractPkg()
 	if err != nil {
 		panic(err)
 	}
 }
 
-//Generate serves as the main method to build package
+// Generate serves as the main method to build package
 func (g *Gostruct) Generate() error {
 
 	tbls := flag.String("tables", "", "Comma separated list of tables")
@@ -181,7 +181,7 @@ func (g *Gostruct) Generate() error {
 	return nil
 }
 
-//handler provides a safe way to perform all concurrent tasks
+// handler provides a safe way to perform all concurrent tasks
 func (g *Gostruct) handler() {
 	for {
 		select {
@@ -199,14 +199,14 @@ func (g *Gostruct) handler() {
 	}
 }
 
-//worker loops through & runs all jobs in the work queue
+// worker loops through & runs all jobs in the work queue
 func (g Gostruct) worker(work <-chan string) {
 	for table := range work {
 		g.Run(table)
 	}
 }
 
-//RunAll generates packages for all tables in a specific database and host
+// RunAll generates packages for all tables in a specific database and host
 func (g *Gostruct) RunAll(work chan<- string) error {
 	connection, err := sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", g.Username, g.Password, g.Host, g.Port, g.Database))
 	if err != nil {
@@ -238,9 +238,9 @@ func (g *Gostruct) RunAll(work chan<- string) error {
 	return nil
 }
 
-//Run handles the run for a single table
+// Run handles the run for a single table
 func (g Gostruct) Run(table string) {
-	//make sure models dir exists
+	// make sure models dir exists
 	if !exists(GOPATH + "/src/models") {
 		err := createDirectory(GOPATH + "/src/models")
 		if err != nil {
@@ -288,7 +288,7 @@ func (g Gostruct) Run(table string) {
 		return
 	}
 
-	//create directory if needed
+	// create directory if needed
 	dir := GOPATH + "/src/models/" + tableNaming + "/"
 	if !exists(dir) {
 		err := os.Mkdir(dir, 0777)
@@ -297,7 +297,7 @@ func (g Gostruct) Run(table string) {
 			return
 		}
 
-		//give new directory full permissions
+		// give new directory full permissions
 		err = os.Chmod(dir, 0777)
 		if err != nil {
 			g.errorChan <- err
@@ -305,23 +305,23 @@ func (g Gostruct) Run(table string) {
 		}
 	}
 
-	//handle base file
+	// handle base file
 	err = g.buildBase(objects, table)
 	if err != nil {
 		g.errorChan <- err
 		return
 	}
 
-	//handle extended file
+	// handle extended file
 	g.buildExtended(table)
 
-	//handle Test file
+	// handle Test file
 	g.buildTest(table)
 
 	g.add <- 1
 }
 
-//buildBase builds the {table}_base.go file with main struct and CRUD functionality
+// buildBase builds the {table}_base.go file with main struct and CRUD functionality
 func (g Gostruct) buildBase(objects []tableObj, table string) error {
 	tableNaming := uppercaseFirst(table)
 	lowerTable := strings.ToLower(table)
@@ -336,8 +336,8 @@ func (g Gostruct) buildBase(objects []tableObj, table string) error {
 	if g.NameFuncs {
 		funcName = tableNaming
 	}
-	initialString := `//Package ` + tableNaming + ` contains base methods and CRUD functionality to
-//interact with the ` + table + ` table in the ` + g.Database + ` database
+	initialString := `// Package ` + tableNaming + ` contains base methods and CRUD functionality to
+// interact with the ` + table + ` table in the ` + g.Database + ` database
 package ` + tableNaming
 	importString := `
 
@@ -348,12 +348,12 @@ import (
 	"strings"`
 
 	nilStruct := `
-	//` + lowerTable + ` is the nilable structure of the home table
+	// ` + lowerTable + ` is the nilable structure of the home table
 type ` + lowerTable + " struct {"
 
 	string1 := `
 
-//` + tableNaming + ` is the structure of the home table
+// ` + tableNaming + ` is the structure of the home table
 type ` + tableNaming + " struct {"
 
 Loop:
@@ -494,12 +494,12 @@ Loop:
 	if len(primaryKeys) == 1 {
 		string1 += `
 
-//TableName returns the name of the mysql table
+// TableName returns the name of the mysql table
 func (obj *` + tableNaming + `) TableName() string {
 	return "` + table + `"
 }
 
-//PrimaryKeyInfo returns the string value of the primary key column and the corresponding value for the receiver
+// PrimaryKeyInfo returns the string value of the primary key column and the corresponding value for the receiver
 func (obj *` + tableNaming + `) PrimaryKeyInfo() (string, interface{}) {
 	val := reflect.ValueOf(obj).Elem()
 	var objTypeId interface{}
@@ -521,7 +521,7 @@ func (obj *` + tableNaming + `) PrimaryKeyInfo() (string, interface{}) {
 	return "` + primaryKeys[0] + `", objTypeId
 }
 
-//TypeInfo implements mysql.Info interface to allow for retrieving type/typeId for any db model
+// TypeInfo implements mysql.Info interface to allow for retrieving type/typeId for any db model
 func (obj *` + tableNaming + `) TypeInfo() (string, interface{}) {
 	_, pkVal := obj.PrimaryKeyInfo()
 	return "` + table + `", pkVal
@@ -531,7 +531,7 @@ func (obj *` + tableNaming + `) TypeInfo() (string, interface{}) {
 	if len(primaryKeys) > 0 {
 		string1 += `
 
-//Save runs an INSERT..UPDATE ON DUPLICATE KEY and validates each value being saved
+// Save runs an INSERT..UPDATE ON DUPLICATE KEY and validates each value being saved
 func (obj *` + tableNaming + `) ` + funcName + `Save() (sql.Result, error) {
 	v := reflect.ValueOf(obj).Elem()
 	args, columns, q, updateStr, err := connection.BuildQuery(v, v.Type())
@@ -587,7 +587,7 @@ func (obj *` + tableNaming + `) ` + funcName + `Save() (sql.Result, error) {
 		string1 += `
 }
 
-//Delete removes a record from the database according to the primary key
+// Delete removes a record from the database according to the primary key
 func (obj *` + tableNaming + `) ` + funcName + `Delete() (sql.Result, error) {
 	return ` + funcName + `Exec("DELETE FROM ` + table + ` WHERE` + whereStrQuery + `", ` + whereStrQueryValues + `)
 }
@@ -623,9 +623,9 @@ func (obj *` + tableNaming + `) ` + funcName + `Delete() (sql.Result, error) {
 			whereStrValues += " " + param
 		}
 
-		//create ReadByKey method
+		// create ReadByKey method
 		string1 += `
-//ReadByKey returns a single pointer to a(n) ` + tableNaming + `
+// ReadByKey returns a single pointer to a(n) ` + tableNaming + `
 func Read` + funcName + `ByKey(` + paramStr + `) (*` + tableNaming + `, error) {
 	return ReadOne` + funcName + `ByQuery("SELECT * FROM ` + table + ` WHERE` + whereStrQuery + `", ` + whereStrValues + `)
 }`
@@ -633,12 +633,12 @@ func Read` + funcName + `ByKey(` + paramStr + `) (*` + tableNaming + `, error) {
 
 	string1 += `
 
-//ReadAll returns all records in the table
+// ReadAll returns all records in the table
 func ReadAll` + funcName + `(options ...connection.QueryOptions) ([]*` + tableNaming + `, error) {
 	return Read` + funcName + `ByQuery("SELECT * FROM ` + table + `", options)
 }
 
-//ReadByQuery returns an array of ` + tableNaming + ` pointers
+// ReadByQuery returns an array of ` + tableNaming + ` pointers
 func Read` + funcName + `ByQuery(query string, args ...interface{}) ([]*` + tableNaming + `, error) {
 	var objects []*` + tableNaming + `
 
@@ -676,7 +676,7 @@ func Read` + funcName + `ByQuery(query string, args ...interface{}) ([]*` + tabl
 	return objects, err
 }
 
-//ReadOneByQuery returns a single pointer to a(n) ` + tableNaming + `
+// ReadOneByQuery returns a single pointer to a(n) ` + tableNaming + `
 func ReadOne` + funcName + `ByQuery(query string, args ...interface{}) (*` + tableNaming + `, error) {
 	var obj ` + lowerTable + `
 
@@ -694,7 +694,7 @@ func ReadOne` + funcName + `ByQuery(query string, args ...interface{}) (*` + tab
 	return &` + tableNaming + `{obj.` + uppercaseFirst(objects[0].Name) + scanStr2 + `}, nil
 }
 
-//Exec allows for update queries
+// Exec allows for update queries
 func ` + funcName + `Exec(query string, args ...interface{}) (sql.Result, error) {
 	con, err := connection.Get("` + g.Database + `")
 	if err != nil {
@@ -706,7 +706,7 @@ func ` + funcName + `Exec(query string, args ...interface{}) (sql.Result, error)
 	importString += "\n)"
 
 	autoGenFile := dir + tableNaming + "_base.go"
-	//g.write <- filewrite{autoGenFile, initialString + importString + string1, true}
+	// g.write <- filewrite{autoGenFile, initialString + importString + string1, true}
 	err := writeFile(autoGenFile, initialString+importString+string1, true)
 	if err != nil {
 		g.errorChan <- err
@@ -720,15 +720,15 @@ func ` + funcName + `Exec(query string, args ...interface{}) (sql.Result, error)
 	return nil
 }
 
-//buildExtended builds the {table}_extends.go file for custom functions & methods
+// buildExtended builds the {table}_extends.go file for custom functions & methods
 func (g Gostruct) buildExtended(table string) {
 	tableNaming := uppercaseFirst(table)
 	dir := GOPATH + "/src/models/" + tableNaming + "/"
 	extendedFilePath := dir + tableNaming + "_extended.go"
 
 	if !exists(extendedFilePath) {
-		contents := "package " + tableNaming + "\n\n//Methods Here"
-		//g.write <- filewrite{daoFilePath, contents, false}
+		contents := "package " + tableNaming + "\n\n// Methods Here"
+		// g.write <- filewrite{daoFilePath, contents, false}
 		err := writeFile(extendedFilePath, contents, false)
 		if err != nil {
 			g.errorChan <- err
@@ -740,7 +740,7 @@ func (g Gostruct) buildExtended(table string) {
 	}
 }
 
-//buildTest builds the skeleton {table}_test.go file to hold all unit tests
+// buildTest builds the skeleton {table}_test.go file to hold all unit tests
 func (g Gostruct) buildTest(table string) {
 	tableNaming := uppercaseFirst(table)
 	dir := GOPATH + "/src/models/" + tableNaming + "/"
@@ -754,9 +754,9 @@ func (g Gostruct) buildTest(table string) {
 		)
 
 		func TestSomething(t *testing.T) {
-			//test stuff here..
+			// test stuff here..
 		}`
-		//g.write <- filewrite{testFilePath, contents, false}
+		// g.write <- filewrite{testFilePath, contents, false}
 		err := writeFile(testFilePath, contents, false)
 		if err != nil {
 			g.errorChan <- err
@@ -768,7 +768,7 @@ func (g Gostruct) buildTest(table string) {
 	}
 }
 
-//buildExtractPkg.. well, builds the extract package
+// buildExtractPkg.. well, builds the extract package
 func buildExtractPkg() error {
 	filePath := GOPATH + "/src/utils/extract/extract.go"
 	if !exists(GOPATH + "/src/utils/extract") {
@@ -870,12 +870,12 @@ func GetValue(val reflect.Value, field reflect.StructField) (interface{}, error)
 	return value, nil
 }
 
-//Returns string between two specified characters/strings
+// Returns string between two specified characters/strings
 func Between(initial string, beginning string, end string) string {
 	return strings.TrimLeft(strings.TrimRight(initial, end), beginning)
 }
 
-//Determine whether or not a string is in array
+// Determine whether or not a string is in array
 func InArray(char string, strings []string) bool {
 	for _, a := range strings {
 		if a == char {
@@ -900,8 +900,8 @@ func InArray(char string, strings []string) bool {
 	return nil
 }
 
-//buildConnectionPkg builds the main connection package for serving up all database connections
-//with a shared connection pool
+// buildConnectionPkg builds the main connection package for serving up all database connections
+// with a shared connection pool
 func buildConnectionPkg() error {
 	if !exists(GOPATH + "/src/connection") {
 		err := createDirectory(GOPATH + "/src/connection")
@@ -914,7 +914,7 @@ func buildConnectionPkg() error {
 
 	bs := "`"
 	conFilePath := GOPATH + "/src/connection/connection.go"
-	contents := `//Package connection handles all connections to the MySQL database(s)
+	contents := `// Package connection handles all connections to the MySQL database(s)
 package connection
 
 import (
@@ -939,25 +939,28 @@ func init() {
 	}
 }
 
-//Connections holds the list of database connections
+// Connections holds the list of database connections
 type Connections struct {
 	list map[string]*sql.DB
 	sync.Mutex
 }
 
-//QueryOptions allows for passing optional parameters for queries
+// QueryOptions allows for passing optional parameters for queries
 type QueryOptions struct {
 	OrderBy string
 	Limit   int
 }
 
-//Get returns a connection to a specific database. If the connection exists in the connections list AND is
-//still active, it will just return that connection. Otherwise, it will open a new connection to
-//the specified database and add it to the connections list.
+// Get returns a connection to a specific database. If the connection exists in the connections list AND is
+// still active, it will just return that connection. Otherwise, it will open a new connection to
+// the specified database and add it to the connections list.
 func Get(db string) (*sql.DB, error) {
+	connections.Lock()
+	defer connections.Unlock()
+
 	connection := connections.list[db]
 	if connection != nil {
-		//determine if connection is still active
+		// determine if connection is still active
 		err = connection.Ping()
 		if err == nil {
 			return connection, err
@@ -966,20 +969,18 @@ func Get(db string) (*sql.DB, error) {
 
 	con, err := sql.Open("mysql", fmt.Sprintf("root:asdfjklasdf@tcp(localhost:3306)/%s?parseTime=true", db))
 	if err != nil {
-		//do whatever tickles your fancy here
+		// do whatever tickles your fancy here
 		log.Fatalln("Connection Error to DB [", db, "]", err.Error())
 	}
-	con.SetMaxIdleConns(10)
-	con.SetMaxOpenConns(500)
+	con.SetMaxIdleConns(0)
+	con.SetMaxOpenConns(50)
 
-	connections.Lock()
 	connections.list[db] = con
-	connections.Unlock()
 
 	return con, nil
 }
 
-//ApplyQueryOptions takes in a slice of interfaces from a query and applies the QueryOptions struct
+// ApplyQueryOptions takes in a slice of interfaces from a query and applies the QueryOptions struct
 func ApplyQueryOptions(query *string, args []interface{}) []interface{} {
 	var newArgs []interface{}
 	for _, arg := range args {
@@ -1013,7 +1014,7 @@ func ApplyQueryOptions(query *string, args []interface{}) []interface{} {
 	return newArgs
 }
 
-//BuildQuery returns all necessary arguments for the Save method of a type
+// BuildQuery returns all necessary arguments for the Save method of a type
 func BuildQuery(v reflect.Value, valType reflect.Type) ([]interface{}, []string, []string, string, error) {
 	var columns []string
 	var q []string
@@ -1052,7 +1053,7 @@ func BuildQuery(v reflect.Value, valType reflect.Type) ([]interface{}, []string,
 	return nil
 }
 
-//startTimer keeps a timer of the duration of the process
+// startTimer keeps a timer of the duration of the process
 func startTimer(g *Gostruct) func() {
 	t := time.Now()
 	return func() {
@@ -1070,17 +1071,17 @@ func startTimer(g *Gostruct) func() {
 	}
 }
 
-//getConnection is a helper to return a connection & an error
+// getConnection is a helper to return a connection & an error
 func getConnection(gs Gostruct) (*sql.DB, error) {
 	return sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", gs.Username, gs.Password, gs.Host, gs.Port, gs.Database))
 }
 
-//showProgress prints how many tables have been processed compared to the total number
+// showProgress prints how many tables have been processed compared to the total number
 func showProgress(g Gostruct) {
 	printNoSpace("Progress.. ", g.processed, "/", g.total, "\r")
 }
 
-//printNoSpace is a println implementation without automatically putting a space between args
+// printNoSpace is a println implementation without automatically putting a space between args
 func printNoSpace(args ...interface{}) {
 	var s string
 	for _, arg := range args {
