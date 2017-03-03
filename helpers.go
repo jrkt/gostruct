@@ -8,7 +8,7 @@ import (
 	"unicode"
 )
 
-//Checks if path or file exists
+//exists checks if path or file exists
 func exists(path string) bool {
 	if _, err := os.Stat(path); err == nil {
 		return true
@@ -17,7 +17,7 @@ func exists(path string) bool {
 	return false
 }
 
-//Does exactly what it says it does
+// uppercaseFirst does exactly what it says it does
 func uppercaseFirst(s string) string {
 	if len(s) < 2 {
 		return strings.ToLower(s)
@@ -31,7 +31,7 @@ func uppercaseFirst(s string) string {
 	return string(bytes.Join([][]byte{lc, rest}, nil))
 }
 
-//createDirectory creates directory and sets permissions to 0777
+// createDirectory creates directory and sets permissions to 0777
 func createDirectory(path string) error {
 	err := os.Mkdir(path, 0777)
 	if err != nil {
@@ -47,8 +47,8 @@ func createDirectory(path string) error {
 	return nil
 }
 
-//Write contents to file and overwrite
-func writeFile(path string, contents string, overwrite bool) error {
+// writeFile contents to file and overwrites if specified
+func writeFile(path, contents string, overwrite bool) error {
 	var err error
 	if exists(path) && overwrite {
 		err = os.Remove(path)
@@ -68,7 +68,7 @@ func writeFile(path string, contents string, overwrite bool) error {
 	return nil
 }
 
-//Run commands as if from the command line
+// runCommand runs cli commands
 func runCommand(command string) (string, error) {
 	parts := getCmdParts(command)
 	cmd := exec.Command(parts[0], parts[1:]...)
@@ -80,7 +80,7 @@ func runCommand(command string) (string, error) {
 	return "", nil
 }
 
-//Normalize command into a string array
+// getCmdParts normalizes command into a string array
 func getCmdParts(command string) []string {
 	lastQuote := rune(0)
 	f := func(c rune) bool {
@@ -108,7 +108,7 @@ func getCmdParts(command string) []string {
 	return parts
 }
 
-//Determines if string is in array
+// inArray determines if string is in array
 func inArray(char string, strings []string) bool {
 	for _, a := range strings {
 		if a == char {
