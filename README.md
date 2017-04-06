@@ -128,15 +128,6 @@ func main() {
     }
 }
 ```
-
-# developers
-
-  - extend the functionality of connection.QueryOptions to include Offset and other common MySQL query options
-        
-      - to do this, update the connection.QueryOptions struct to include any new options and then update the connection.ApplyQueryOptions function to handle the new options
-
-# example generated code
-
 <b>User_extended.go - sample function to include</b>
 
 ```go
@@ -189,6 +180,14 @@ func main() {
     }
 }
 ```
+
+# developers
+
+  - extend the functionality of connection.QueryOptions to include Offset and other common MySQL query options
+        
+      - to do this, update the connection.QueryOptions struct to include any new options and then update the connection.ApplyQueryOptions function to handle the new options
+
+# example generated code
 
 <b>User_base.go - sample file</b>
 ```go
