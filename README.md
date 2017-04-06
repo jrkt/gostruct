@@ -4,6 +4,7 @@
 [![Build Status](https://travis-ci.org/jonathankentstevens/gostruct.svg?branch=master)](https://travis-ci.org/jonathankentstevens/gostruct)
 
 # gostruct
+
 Library to auto-generate packages and basic CRUD operations for a given MySQL database table.
 
 # dependencies
@@ -105,23 +106,23 @@ import (
 
 func main() {
     // retrieve existing user by id
-    user, err := User.ReadByKey(12345)
+    user, err := User.ReadByKey(ctx, 12345)
     if err != nil {
         // handle error
     }
 	user.Email = "test@email.com"
-    user.Save()    
+    user.Save(ctx)    
     
     // create new user
     user := new(User.User)
     user.Email = "test@email.com"
-    res, err := user.Save()
+    res, err := user.Save(ctx)
     if err != nil {
     	// save failed
     }
 
     // delete user
-    _, err := user.Delete()
+    _, err := user.Delete(ctx)
     if err != nil {
     	// delete failed
     }
@@ -139,14 +140,14 @@ func main() {
 <b>User_extended.go - sample function to include</b>
 
 ```go
-func ReadAllActive(options connection.QueryOptions) ([]*UserObj, error) {
-	return ReadByQuery("SELECT * FROM User WHERE IsActive = '1'", options)
+func ReadAllActive(ctx context.Context, options connection.QueryOptions) ([]*UserObj, error) {
+	return ReadByQuery(ctx, "SELECT * FROM User WHERE IsActive = '1'", options)
 }
 ```
 Usage:
 ```go
 func main() {
-	users, err := User.ReadAllActive(connection.QueryOptions{OrderBy: "Name ASC"})
+	users, err := User.ReadAllActive(ctx, connection.QueryOptions{OrderBy: "Name ASC"})
 	if err != nil {
 		// handle error
 	}
@@ -161,10 +162,10 @@ func main() {
 <b>User_extended.go - sample method to include</b>
 
 ```go
-func (user *UserObj) Terminate() error {
+func (user *UserObj) Terminate(ctx context.Context) error {
 	user.IsActive = false
 	user.TerminationDate = time.Now().Local()
-	_, err := user.Save()
+	_, err := user.Save(ctx)
 	if err != nil {
 		// save failed
 		return err
@@ -175,18 +176,17 @@ func (user *UserObj) Terminate() error {
 Usage:
 ```go
 func main() {
-	users, err := User.ReadAllActive(connection.QueryOptions{OrderBy: "Name ASC"})
+	users, err := User.ReadAllActive(ctx, connection.QueryOptions{OrderBy: "Name ASC"})
 	if err != nil {
 	    // read failed or no results found
-	} else {
-	    // handle users
-		for _, user := range users {
-			err = user.Terminate()
-			if err != nil {
-			    // handle error 
-			}
-		}
 	}
+	// handle users
+    for _, user := range users {
+        err = user.Terminate()
+        if err != nil {
+            // handle error 
+        }
+    }
 }
 ```
 
@@ -204,6 +204,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/pkg/errors"
+	"golang.org/x/net/context"
 )
 
 // User is the structure of the home table
@@ -256,7 +257,7 @@ func (obj *User) TypeInfo() (string, interface{}) {
 }
 
 // Save runs an INSERT..UPDATE ON DUPLICATE KEY and validates each value being saved
-func (obj *User) Save() (sql.Result, error) {
+func (obj *User) Save(ctx context.Context) (sql.Result, error) {
 	v := reflect.ValueOf(obj).Elem()
 	args, columns, q, updateStr, err := connection.BuildQuery(v, v.Type())
 	if err != nil {
@@ -269,7 +270,7 @@ func (obj *User) Save() (sql.Result, error) {
 		newRecord = true
 	}
 
-	res, err := Exec(query, newArgs...)
+	res, err := Exec(ctx, query, newArgs...)
 	if err == nil && newRecord {
 		id, _ := res.LastInsertId()
 		obj.Id = id
@@ -282,22 +283,22 @@ func (obj *User) Save() (sql.Result, error) {
 }
 
 // Delete removes a record from the database according to the primary key
-func (obj *User) Delete() (sql.Result, error) {
-	return Exec("DELETE FROM user WHERE id = ?", obj.Id)
+func (obj *User) Delete(ctx context.Context) (sql.Result, error) {
+	return Exec(ctx, "DELETE FROM user WHERE id = ?", obj.Id)
 }
 
 // ReadByKey returns a single pointer to a(n) User
-func ReadByKey(id int64) (*User, error) {
-	return ReadOneByQuery("SELECT * FROM user WHERE id = ?", id)
+func ReadByKey(ctx context.Context, id int64) (*User, error) {
+	return ReadOneByQuery(ctx, "SELECT * FROM user WHERE id = ?", id)
 }
 
 // ReadAll returns all records in the table
-func ReadAll(options ...connection.QueryOptions) ([]*User, error) {
-	return ReadByQuery("SELECT * FROM user", options)
+func ReadAll(ctx context.Context, options ...connection.QueryOptions) ([]*User, error) {
+	return ReadByQuery(ctx, "SELECT * FROM user", options)
 }
 
 // ReadByQuery returns an array of User pointers
-func ReadByQuery(query string, args ...interface{}) ([]*User, error) {
+func ReadByQuery(ctx context.Context, query string, args ...interface{}) ([]*User, error) {
 	var objects []*User
 
 	con, err := connection.Get("sys")
@@ -307,7 +308,7 @@ func ReadByQuery(query string, args ...interface{}) ([]*User, error) {
 
 	newArgs := connection.ApplyQueryOptions(&query, args)
 	query = strings.Replace(query, "'", "\"", -1)
-	rows, err := con.Query(query, newArgs...)
+	rows, err := con.QueryContext(ctx, query, newArgs...)
 	if err != nil {
 		return objects, errors.Wrap(err, "query error")
 	}
@@ -335,7 +336,7 @@ func ReadByQuery(query string, args ...interface{}) ([]*User, error) {
 }
 
 // ReadOneByQuery returns a single pointer to a(n) User
-func ReadOneByQuery(query string, args ...interface{}) (*User, error) {
+func ReadOneByQuery(ctx context.Context, query string, args ...interface{}) (*User, error) {
 	var obj user
 
 	con, err := connection.Get("sys")
@@ -344,7 +345,7 @@ func ReadOneByQuery(query string, args ...interface{}) (*User, error) {
 	}
 
 	query = strings.Replace(query, "'", "\"", -1)
-	err = con.QueryRow(query, args...).Scan(&obj.Id, &obj.Name, &obj.Email, &obj.Age)
+	err = con.QueryRowContext(ctx, query, args...).Scan(&obj.Id, &obj.Name, &obj.Email, &obj.Age)
 	if err != nil && err != sql.ErrNoRows {
 		return nil, errors.Wrap(err, "query/scan error")
 	}
@@ -353,12 +354,12 @@ func ReadOneByQuery(query string, args ...interface{}) (*User, error) {
 }
 
 // Exec allows for update queries
-func Exec(query string, args ...interface{}) (sql.Result, error) {
+func Exec(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
 	con, err := connection.Get("sys")
 	if err != nil {
 		return nil, errors.Wrap(err, "connection failed")
 	}
-	return con.Exec(query, args...)
+	return con.ExecContext(ctx, query, args...)
 }
 ```
 

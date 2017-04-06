@@ -489,7 +489,8 @@ Loop:
 		_ "github.com/go-sql-driver/mysql"`
 	}
 	importString += `
-		"github.com/pkg/errors"`
+		"github.com/pkg/errors"
+		"golang.org/x/net/context"`
 
 	if len(primaryKeys) == 1 {
 		string1 += `
@@ -532,7 +533,7 @@ func (obj *` + tableNaming + `) TypeInfo() (string, interface{}) {
 		string1 += `
 
 // Save runs an INSERT..UPDATE ON DUPLICATE KEY and validates each value being saved
-func (obj *` + tableNaming + `) ` + funcName + `Save() (sql.Result, error) {
+func (obj *` + tableNaming + `) ` + funcName + `Save(ctx context.Context) (sql.Result, error) {
 	v := reflect.ValueOf(obj).Elem()
 	args, columns, q, updateStr, err := connection.BuildQuery(v, v.Type())
 	if err != nil {
@@ -544,7 +545,7 @@ func (obj *` + tableNaming + `) ` + funcName + `Save() (sql.Result, error) {
 		if len(primaryKeys) > 1 {
 			string1 += `
 
-	return ` + funcName + `Exec(query, newArgs...)`
+	return ` + funcName + `Exec(ctx, query, newArgs...)`
 		} else {
 			var insertIdStr string
 			switch primaryKeyTypes[0] {
@@ -562,7 +563,7 @@ func (obj *` + tableNaming + `) ` + funcName + `Save() (sql.Result, error) {
 				newRecord = true
 			}
 
-			res, err := ` + funcName + `Exec(query, newArgs...)
+			res, err := ` + funcName + `Exec(ctx, query, newArgs...)
 			if err == nil && newRecord {
 				id, _ := res.LastInsertId()
 				obj.` + uppercaseFirst(primaryKeys[0]) + ` = ` + insertIdStr + `
@@ -588,8 +589,8 @@ func (obj *` + tableNaming + `) ` + funcName + `Save() (sql.Result, error) {
 }
 
 // Delete removes a record from the database according to the primary key
-func (obj *` + tableNaming + `) ` + funcName + `Delete() (sql.Result, error) {
-	return ` + funcName + `Exec("DELETE FROM ` + table + ` WHERE` + whereStrQuery + `", ` + whereStrQueryValues + `)
+func (obj *` + tableNaming + `) ` + funcName + `Delete(ctx context.Context) (sql.Result, error) {
+	return ` + funcName + `Exec(ctx, "DELETE FROM ` + table + ` WHERE` + whereStrQuery + `", ` + whereStrQueryValues + `)
 }
 `
 		paramStr, whereStrValues := "", ""
@@ -626,20 +627,20 @@ func (obj *` + tableNaming + `) ` + funcName + `Delete() (sql.Result, error) {
 		// create ReadByKey method
 		string1 += `
 // ReadByKey returns a single pointer to a(n) ` + tableNaming + `
-func Read` + funcName + `ByKey(` + paramStr + `) (*` + tableNaming + `, error) {
-	return ReadOne` + funcName + `ByQuery("SELECT * FROM ` + table + ` WHERE` + whereStrQuery + `", ` + whereStrValues + `)
+func Read` + funcName + `ByKey(ctx context.Context, ` + paramStr + `) (*` + tableNaming + `, error) {
+	return ReadOne` + funcName + `ByQuery(ctx, "SELECT * FROM ` + table + ` WHERE` + whereStrQuery + `", ` + whereStrValues + `)
 }`
 	}
 
 	string1 += `
 
 // ReadAll returns all records in the table
-func ReadAll` + funcName + `(options ...connection.QueryOptions) ([]*` + tableNaming + `, error) {
-	return Read` + funcName + `ByQuery("SELECT * FROM ` + table + `", options)
+func ReadAll` + funcName + `(ctx context.Context, options ...connection.QueryOptions) ([]*` + tableNaming + `, error) {
+	return Read` + funcName + `ByQuery(ctx, "SELECT * FROM ` + table + `", options)
 }
 
 // ReadByQuery returns an array of ` + tableNaming + ` pointers
-func Read` + funcName + `ByQuery(query string, args ...interface{}) ([]*` + tableNaming + `, error) {
+func Read` + funcName + `ByQuery(ctx context.Context, query string, args ...interface{}) ([]*` + tableNaming + `, error) {
 	var objects []*` + tableNaming + `
 
 	con, err := connection.Get("` + g.Database + `")
@@ -649,7 +650,7 @@ func Read` + funcName + `ByQuery(query string, args ...interface{}) ([]*` + tabl
 
 	newArgs := connection.ApplyQueryOptions(&query, args)
 	query = strings.Replace(query, "'", "\"", -1)
-	rows, err := con.Query(query, newArgs...)
+	rows, err := con.QueryContext(ctx, query, newArgs...)
 	if err != nil {
 		return objects, errors.Wrap(err, "query error")
 	}
@@ -677,7 +678,7 @@ func Read` + funcName + `ByQuery(query string, args ...interface{}) ([]*` + tabl
 }
 
 // ReadOneByQuery returns a single pointer to a(n) ` + tableNaming + `
-func ReadOne` + funcName + `ByQuery(query string, args ...interface{}) (*` + tableNaming + `, error) {
+func ReadOne` + funcName + `ByQuery(ctx context.Context, query string, args ...interface{}) (*` + tableNaming + `, error) {
 	var obj ` + lowerTable + `
 
 	con, err := connection.Get("` + g.Database + `")
@@ -686,7 +687,7 @@ func ReadOne` + funcName + `ByQuery(query string, args ...interface{}) (*` + tab
 	}
 
 	query = strings.Replace(query, "'", "\"", -1)
-	err = con.QueryRow(query, args...).Scan(&obj.` + uppercaseFirst(objects[0].Name) + scanStr + `)
+	err = con.QueryRowContext(ctx, query, args...).Scan(&obj.` + uppercaseFirst(objects[0].Name) + scanStr + `)
 	if err != nil && err != sql.ErrNoRows {
 		return nil, errors.Wrap(err, "query/scan error")
 	}
@@ -695,12 +696,12 @@ func ReadOne` + funcName + `ByQuery(query string, args ...interface{}) (*` + tab
 }
 
 // Exec allows for update queries
-func ` + funcName + `Exec(query string, args ...interface{}) (sql.Result, error) {
+func ` + funcName + `Exec(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
 	con, err := connection.Get("` + g.Database + `")
 	if err != nil {
 		return nil, errors.Wrap(err, "connection failed")
 	}
-	return con.Exec(query, args...)
+	return con.ExecContext(ctx, query, args...)
 }`
 
 	importString += "\n)"
