@@ -68,6 +68,8 @@ type Gostruct struct {
 	Port      string
 	Username  string
 	Password  string
+	modelDir  string
+	dbDir     string
 	NameFuncs bool
 	add       chan int
 	totalChan chan int
@@ -114,17 +116,6 @@ func init() {
 	if last := len(GOPATH) - 1; last >= 0 && GOPATH[last] == '/' {
 		GOPATH = GOPATH[:last]
 	}
-
-	err := buildConnectionPkg()
-	if err != nil {
-		panic(err)
-	}
-
-	// handle extract file
-	err = buildExtractPkg()
-	if err != nil {
-		panic(err)
-	}
 }
 
 // Generate serves as the main method to build package
@@ -136,7 +127,33 @@ func (g *Gostruct) Generate() error {
 	port := flag.String("port", "3306", "DB Port (MySQL 3306 is default)")
 	all := flag.Bool("all", false, "Run for All Tables")
 	nameFuncs := flag.Bool("nameFuncs", false, "Whether to include the struct name in the function signature")
+	dbDir := flag.String("dbDir", "connection", "directory where connection package should be stored")
+	modelDir := flag.String("modelDir", "", "directory where models should live")
 	flag.Parse()
+
+	err := g.buildConnectionPkg()
+	if err != nil {
+		panic(err)
+	}
+
+	g.dbDir = GOPATH + "/src/connection"
+	if *dbDir != "" {
+		g.dbDir = *dbDir
+		if last := len(g.dbDir) - 1; last >= 0 && g.dbDir[last] == '/' {
+			g.dbDir = g.dbDir[:last]
+		}
+	}
+
+	g.dbDir = strings.Replace(g.dbDir, GOPATH+"/src/", "", 1)
+	g.modelDir = strings.Replace(g.dbDir, GOPATH+"/src/", "", 1)
+
+	g.modelDir = g.dbDir + "/models"
+	if *modelDir != "" {
+		g.modelDir = *modelDir
+		if last := len(g.modelDir) - 1; last >= 0 && g.modelDir[last] == '/' {
+			g.modelDir = g.modelDir[:last]
+		}
+	}
 
 	g.Database = *db
 	g.Host = *host
@@ -241,8 +258,8 @@ func (g *Gostruct) RunAll(work chan<- string) error {
 // Run handles the run for a single table
 func (g Gostruct) Run(table string) {
 	// make sure models dir exists
-	if !exists(GOPATH + "/src/models") {
-		err := createDirectory(GOPATH + "/src/models")
+	if !exists(g.modelDir) {
+		err := createDirectory(g.modelDir)
 		if err != nil {
 			g.errorChan <- err
 			return
@@ -289,7 +306,7 @@ func (g Gostruct) Run(table string) {
 	}
 
 	// create directory if needed
-	dir := GOPATH + "/src/models/" + tableNaming + "/"
+	dir := g.modelDir + "/" + tableNaming + "/"
 	if !exists(dir) {
 		err := os.Mkdir(dir, 0777)
 		if err != nil {
@@ -326,7 +343,7 @@ func (g Gostruct) buildBase(objects []tableObj, table string) error {
 	tableNaming := uppercaseFirst(table)
 	lowerTable := strings.ToLower(table)
 
-	dir := GOPATH + "/src/models/" + tableNaming + "/"
+	dir := g.modelDir + "/" + tableNaming + "/"
 	importTime, importMysql := false, false
 
 	var usedColumns []usedColumn
@@ -342,7 +359,7 @@ package ` + tableNaming
 	importString := `
 
 import (
-	"connection"
+	db "` + g.dbDir + `"
 	"database/sql"
 	"reflect"
 	"strings"`
@@ -484,10 +501,8 @@ Loop:
 	if importMysql {
 		importString += `
 		"github.com/go-sql-driver/mysql"`
-	} else {
-		importString += `
-		_ "github.com/go-sql-driver/mysql"`
 	}
+
 	importString += `
 		"github.com/pkg/errors"
 		"golang.org/x/net/context"`
@@ -535,7 +550,7 @@ func (obj *` + tableNaming + `) TypeInfo() (string, interface{}) {
 // Save runs an INSERT..UPDATE ON DUPLICATE KEY and validates each value being saved
 func (obj *` + tableNaming + `) ` + funcName + `Save(ctx context.Context) (sql.Result, error) {
 	v := reflect.ValueOf(obj).Elem()
-	args, columns, q, updateStr, err := connection.BuildQuery(v, v.Type())
+	args, columns, q, updateStr, err := db.BuildQuery(v, v.Type())
 	if err != nil {
 		return nil, errors.Wrap(err, "field validation error")
 	}
@@ -635,7 +650,7 @@ func Read` + funcName + `ByKey(ctx context.Context, ` + paramStr + `) (*` + tabl
 	string1 += `
 
 // ReadAll returns all records in the table
-func ReadAll` + funcName + `(ctx context.Context, options ...connection.QueryOptions) ([]*` + tableNaming + `, error) {
+func ReadAll` + funcName + `(ctx context.Context, options ...db.QueryOptions) ([]*` + tableNaming + `, error) {
 	return Read` + funcName + `ByQuery(ctx, "SELECT * FROM ` + table + `", options)
 }
 
@@ -643,12 +658,9 @@ func ReadAll` + funcName + `(ctx context.Context, options ...connection.QueryOpt
 func Read` + funcName + `ByQuery(ctx context.Context, query string, args ...interface{}) ([]*` + tableNaming + `, error) {
 	var objects []*` + tableNaming + `
 
-	con, err := connection.Get("` + g.Database + `")
-	if err != nil {
-		return objects, errors.Wrap(err, "connection failed")
-	}
+	con := db.GetConnection()
 
-	newArgs := connection.ApplyQueryOptions(&query, args)
+	newArgs := db.ApplyQueryOptions(&query, args)
 	query = strings.Replace(query, "'", "\"", -1)
 	rows, err := con.QueryContext(ctx, query, newArgs...)
 	if err != nil {
@@ -681,33 +693,25 @@ func Read` + funcName + `ByQuery(ctx context.Context, query string, args ...inte
 func ReadOne` + funcName + `ByQuery(ctx context.Context, query string, args ...interface{}) (*` + tableNaming + `, error) {
 	var obj ` + lowerTable + `
 
-	con, err := connection.Get("` + g.Database + `")
-	if err != nil {
-		return nil, errors.Wrap(err, "connection failed")
-	}
-
+	con := db.GetConnection()
 	query = strings.Replace(query, "'", "\"", -1)
-	err = con.QueryRowContext(ctx, query, args...).Scan(&obj.` + uppercaseFirst(objects[0].Name) + scanStr + `)
+	err := con.QueryRowContext(ctx, query, args...).Scan(&obj.` + uppercaseFirst(objects[0].Name) + scanStr + `)
 	if err != nil && err != sql.ErrNoRows {
 		return nil, errors.Wrap(err, "query/scan error")
 	}
 
-	return &` + tableNaming + `{obj.` + uppercaseFirst(objects[0].Name) + scanStr2 + `}, nil
+	return &` + tableNaming + `{obj.` + uppercaseFirst(objects[0].Name) + scanStr2 + `}, err
 }
 
 // Exec allows for update queries
 func ` + funcName + `Exec(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
-	con, err := connection.Get("` + g.Database + `")
-	if err != nil {
-		return nil, errors.Wrap(err, "connection failed")
-	}
+	con := db.GetConnection()
 	return con.ExecContext(ctx, query, args...)
 }`
 
 	importString += "\n)"
 
 	autoGenFile := dir + tableNaming + "_base.go"
-	// g.write <- filewrite{autoGenFile, initialString + importString + string1, true}
 	err := writeFile(autoGenFile, initialString+importString+string1, true)
 	if err != nil {
 		g.errorChan <- err
@@ -724,12 +728,11 @@ func ` + funcName + `Exec(ctx context.Context, query string, args ...interface{}
 // buildExtended builds the {table}_extends.go file for custom functions & methods
 func (g Gostruct) buildExtended(table string) {
 	tableNaming := uppercaseFirst(table)
-	dir := GOPATH + "/src/models/" + tableNaming + "/"
+	dir := g.modelDir + "/" + tableNaming + "/"
 	extendedFilePath := dir + tableNaming + "_extended.go"
 
 	if !exists(extendedFilePath) {
 		contents := "package " + tableNaming + "\n\n// Methods Here"
-		// g.write <- filewrite{daoFilePath, contents, false}
 		err := writeFile(extendedFilePath, contents, false)
 		if err != nil {
 			g.errorChan <- err
@@ -744,7 +747,7 @@ func (g Gostruct) buildExtended(table string) {
 // buildTest builds the skeleton {table}_test.go file to hold all unit tests
 func (g Gostruct) buildTest(table string) {
 	tableNaming := uppercaseFirst(table)
-	dir := GOPATH + "/src/models/" + tableNaming + "/"
+	dir := g.modelDir + "/" + tableNaming + "/"
 	testFilePath := dir + tableNaming + "_test.go"
 
 	if !exists(testFilePath) {
@@ -769,141 +772,9 @@ func (g Gostruct) buildTest(table string) {
 	}
 }
 
-// buildExtractPkg.. well, builds the extract package
-func buildExtractPkg() error {
-	filePath := GOPATH + "/src/utils/extract/extract.go"
-	if !exists(GOPATH + "/src/utils/extract") {
-		err := createDirectory(GOPATH + "/src/utils/extract")
-		if err != nil {
-			return err
-		}
-	}
-
-	if !exists(filePath) {
-		contents := `package extract
-
-import (
-	"database/sql"
-	"github.com/pkg/errors"
-	"reflect"
-	"strings"
-	"time"
-)
-
-func isEmpty(val interface{}) bool {
-	empty := false
-	switch v := val.(type) {
-	case string:
-		if v == "" {
-			empty = true
-		}
-	case int:
-		if v == 0 {
-			empty = true
-		}
-	case int64:
-		if v == int64(0) {
-			empty = true
-		}
-	case float64:
-		if v == float64(0) {
-			empty = true
-		}
-	case bool:
-		if v == false {
-			empty = true
-		}
-	case time.Time:
-		if v.IsZero() {
-			empty = true
-		}
-	case *string, *int, *int64, *float64, *bool, *time.Time:
-		if v == nil {
-			empty = true
-		}
-	}
-	return empty
-}
-
-func GetValue(val reflect.Value, field reflect.StructField) (interface{}, error) {
-	var value interface{}
-
-	column := field.Tag.Get("column")
-	if strings.Contains(string(field.Tag.Get("type")), "enum") {
-		var s string
-		switch t := val.Interface().(type) {
-		case string:
-			s = t
-		case sql.NullString:
-			s = t.String
-		}
-		vals := Between(string(field.Tag.Get("type")), "enum('", "')")
-		arr := strings.Split(vals, "','")
-		if !InArray(s, arr) {
-			return nil, errors.New("Invalid value: '" + s + "' for column: " + column + ". Possible values are: " + strings.Join(arr, ", "))
-		}
-	}
-
-	if val.Kind() == reflect.Interface && !val.IsNil() {
-		elm := val.Elem()
-		if elm.Kind() == reflect.Ptr && !elm.IsNil() && elm.Elem().Kind() == reflect.Ptr {
-			val = elm
-		}
-	}
-
-	if val.Kind() == reflect.Ptr {
-		if val.IsNil() {
-			value = nil
-		} else {
-			value = val.Elem().Interface()
-		}
-	} else {
-		value = val.Interface()
-	}
-
-	if isEmpty(value) && field.Tag.Get("key") != "PRI" {
-		value = field.Tag.Get("default")
-		if value == "" && field.Tag.Get("null") == "NO" {
-			return nil, errors.New("you must provide a value for column: " + column)
-		}
-	}
-
-	return value, nil
-}
-
-// Returns string between two specified characters/strings
-func Between(initial string, beginning string, end string) string {
-	return strings.TrimLeft(strings.TrimRight(initial, end), beginning)
-}
-
-// Determine whether or not a string is in array
-func InArray(char string, strings []string) bool {
-	for _, a := range strings {
-		if a == char {
-			return true
-		}
-	}
-	return false
-}
-
-`
-		err := writeFile(filePath, contents, false)
-		if err != nil {
-			return err
-		}
-	}
-
-	_, err := runCommand("go fmt " + filePath)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 // buildConnectionPkg builds the main connection package for serving up all database connections
 // with a shared connection pool
-func buildConnectionPkg() error {
+func (g Gostruct) buildConnectionPkg() error {
 	if !exists(GOPATH + "/src/connection") {
 		err := createDirectory(GOPATH + "/src/connection")
 		if err != nil {
@@ -923,8 +794,9 @@ import (
 	"fmt"
 	"log"
 	"reflect"
+	"strings"
 	"sync"
-	"utils/extract"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -968,7 +840,7 @@ func Get(db string) (*sql.DB, error) {
 		}
 	}
 
-	con, err := sql.Open("mysql", fmt.Sprintf("root:asdfjklasdf@tcp(localhost:3306)/%s?parseTime=true", db))
+	con, err := sql.Open("mysql", fmt.Sprintf("` + g.Username + `:` + g.Password + `@tcp(` + g.Host + `:3306)/%s?parseTime=true", db))
 	if err != nil {
 		// do whatever tickles your fancy here
 		log.Fatalln("Connection Error to DB [", db, "]", err.Error())
@@ -1023,7 +895,7 @@ func BuildQuery(v reflect.Value, valType reflect.Type) ([]interface{}, []string,
 	var args []interface{}
 
 	for i := 0; i < v.NumField(); i++ {
-		val, err := extract.GetValue(v.Field(i), valType.Field(i))
+		val, err := getValue(v.Field(i), valType.Field(i))
 		if err != nil {
 			return nil, columns, q, "", err
 		}
@@ -1038,6 +910,106 @@ func BuildQuery(v reflect.Value, valType reflect.Type) ([]interface{}, []string,
 	}
 
 	return args, columns, q, updateStr, nil
+}
+
+func isEmpty(val interface{}) bool {
+	empty := false
+	switch v := val.(type) {
+	case string:
+		if v == "" {
+			empty = true
+		}
+	case int:
+		if v == 0 {
+			empty = true
+		}
+	case int64:
+		if v == int64(0) {
+			empty = true
+		}
+	case float64:
+		if v == float64(0) {
+			empty = true
+		}
+	case bool:
+		if v == false {
+			empty = true
+		}
+	case time.Time:
+		if v.IsZero() {
+			empty = true
+		}
+	case *string, *int, *int64, *float64, *bool, *time.Time:
+		if v == nil {
+			empty = true
+		}
+	}
+	return empty
+}
+
+func getValue(val reflect.Value, field reflect.StructField) (interface{}, error) {
+	var value interface{}
+
+	column := field.Tag.Get("column")
+	fieldType := string(field.Tag.Get("type"))
+	if strings.Contains(fieldType, "enum") {
+		var s string
+		switch t := val.Interface().(type) {
+		case string:
+			s = t
+		case *string:
+			if t == nil {
+				s = "NULL"
+			} else {
+				s = *t
+			}
+		}
+		s2 := strings.Replace(fieldType, "enum('", "", 1)
+		s2 = strings.Replace(s2, "')", "", 1)
+		arr := strings.Split(s2, "','")
+		if !inArray(s, arr) {
+			return nil, fmt.Errorf("Invalid value: %s for column: %s. Possible values are: %s", s, column, strings.Join(arr, ", "))
+		}
+	}
+
+	if val.Kind() == reflect.Interface && !val.IsNil() {
+		elm := val.Elem()
+		if elm.Kind() == reflect.Ptr && !elm.IsNil() && elm.Elem().Kind() == reflect.Ptr {
+			val = elm
+		}
+	}
+
+	if val.Kind() == reflect.Ptr {
+		if val.IsNil() {
+			value = nil
+		} else {
+			value = val.Elem().Interface()
+		}
+	} else {
+		value = val.Interface()
+	}
+
+	if IsEmpty(value) {
+		if field.Tag.Get("key") != "PRI" {
+			value = field.Tag.Get("default")
+			if value == "" && field.Tag.Get("null") == "NO" {
+				return nil, fmt.Errorf("you must provide a value for column: %s", column)
+			}
+		}
+		value = nil
+	}
+
+	return value, nil
+}
+
+// inArray determines whether or not a string is in a string array
+func inArray(char string, strings []string) bool {
+	for _, a := range strings {
+		if a == char {
+			return true
+		}
+	}
+	return false
 }
 
 `
