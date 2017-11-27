@@ -1,7 +1,7 @@
 [![License](http://img.shields.io/:license-gpl3-blue.svg)](http://www.gnu.org/licenses/gpl-3.0.html)
-[![Go Report Card](https://goreportcard.com/badge/github.com/jonathankentstevens/gostruct)](https://goreportcard.com/report/github.com/jonathankentstevens/gostruct)
-[![GoDoc](https://godoc.org/github.com/jonathankentstevens/gostruct?status.svg)](https://godoc.org/github.com/jonathankentstevens/gostruct)
-[![Build Status](https://travis-ci.org/jonathankentstevens/gostruct.svg?branch=master)](https://travis-ci.org/jonathankentstevens/gostruct)
+[![Go Report Card](https://goreportcard.com/badge/github.com/jrkt/gostruct)](https://goreportcard.com/report/github.com/jrkt/gostruct)
+[![GoDoc](https://godoc.org/github.com/jrkt/gostruct?status.svg)](https://godoc.org/github.com/jrkt/gostruct)
+[![Build Status](https://travis-ci.org/jrkt/gostruct.svg?branch=master)](https://travis-ci.org/jrkt/gostruct)
 
 # gostruct
 
@@ -14,7 +14,7 @@ Library to auto-generate packages and basic CRUD operations for a given MySQL da
     
 # implementation
 
-    go get github.com/jonathankentstevens/gostruct
+    go get github.com/jrkt/gostruct
 
 Create a generate.go file with the following contents (including your db username/password):
 
@@ -22,7 +22,7 @@ Create a generate.go file with the following contents (including your db usernam
 package main
 
 import (
-	"github.com/jonathankentstevens/gostruct"
+	"github.com/jrkt/gostruct"
 )
 
 func main() {

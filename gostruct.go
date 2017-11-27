@@ -20,14 +20,14 @@ Dependencies:
 
 Installation:
 
-        go get github.com/jonathankentstevens/gostruct
+        go get github.com/jrkt/gostruct
 
 Create a generate.go file with the following contents (including your db username/password):
 
 	package main
 
 	import (
-		"github.com/jonathankentstevens/gostruct"
+		"github.com/jrkt/gostruct"
 	)
 
 	func main() {
